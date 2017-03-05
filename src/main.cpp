@@ -110,36 +110,42 @@ int main ()
     glUniformMatrix4fv(4, 1, GL_FALSE, glm::value_ptr(glm::mat4(1.0f)));
 
     glEnable(GL_BLEND); glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-    glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LESS);
+//    glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LESS);
     glfwSetKeyCallback(g.getWindow(), keyCallback);
     glfwSetMouseButtonCallback(g.getWindow(), mouseButtonCallback);
 
     unsigned iterMax = 100;
     GLfloat capSqr = 64;
-    size_t dim[3]{1000,1000,1000};
-    double size[3]{2.0,2.0,2.0};
-    double origin[3]{0.0,0.0,0.0};
+    size_t dim[3]{100,100,100};
+    double size[3]{4.0,4.0,4.0};
+    double origin[3]{-2.0,-2.0,-2.0};
 
-    std::vector<Vertex> tiling;
+//    std::vector<Vertex> tiling;
 
-//    grid_t gridData;
-//    resizeGridData(gridData, dim);
-//    Grid grid{gridData,{dim[0],dim[1],dim[2]},{size[0],size[1],size[2]},{origin[0],origin[1],origin[2]}};
-//    stellaCorris(grid, iterMax, capSqr, 2);
+    grid_t gridData;
+    resizeGridData(gridData, dim);
+    Grid grid{gridData,{dim[0],dim[1],dim[2]},{size[0],size[1],size[2]},{origin[0],origin[1],origin[2]}};
+    stellaCorris(grid, iterMax, capSqr, 2);
 //    writeFile("pee pee", grid, "fl");
-    Grid grid;
-    readFile("fl", grid);
-//    polygonise(grid, 30, tiling);
-//    addNormals(tiling);
+//
+//    Grid grid;
+//    readFile("fl", grid);
+    for (unsigned i=0; i < 30; ++i)
+    {
+        std::vector<Vertex> surface;
+        polygonise(grid, 10+i*3, surface);
+        addNormals(surface);
+        g.addSurface(10+i*3, surface);
+    }
 //    g.setVertices(tiling);
-//    g.mustUpdate();
-//    GLFWAttrs.scalar = 10;
-//    g.scale(GLFWAttrs.scalar);
-//
-//    glUniform1ui(5, 30);
-//    glUniform1ui(6, iterMax);
-//
-//    glfwSetInputMode(g.getWindow(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-//    glfwSetInputMode(g.getWindow(), GLFW_STICKY_KEYS, false);
-//    g.loop(0.1, 0.0);
+    g.mustUpdate();
+    GLFWAttrs.scalar = 10;
+    g.scale(GLFWAttrs.scalar);
+
+    glUniform1ui(5, 30);
+    glUniform1ui(6, iterMax);
+
+    glfwSetInputMode(g.getWindow(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    glfwSetInputMode(g.getWindow(), GLFW_STICKY_KEYS, false);
+    g.loop(0.1, 0.0);
 }

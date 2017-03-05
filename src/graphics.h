@@ -9,13 +9,15 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/ext.hpp>
+#include <map>
 
 #include "marching_cubes.h"
 
 class Graphics 
 {
 private:
-    std::vector<Vertex> mVertices;
+    std::vector<Vertex> mSurfaces;
+    std::map<iso_uint_t, std::pair<size_t, size_t>> mSurfaceIndexMap;
 	GLuint mVbo, mVao;
     GLfloat mWidth, mHeight;
     GLuint mShaderProgram;
@@ -38,7 +40,7 @@ public:
 
     void setCam (glm::vec3 const&, glm::vec3 const&);
     void moveCam (glm::vec3 const&);
-    void setVertices (std::vector<Vertex> const&);
+    void addSurface (iso_uint_t const&, std::vector<Vertex> const&); 
     void scale (GLfloat const&);
 
     inline GLFWwindow* const& getWindow () const {return mWindow;};
@@ -51,7 +53,6 @@ public:
 
     void incColorScheme ();
 	static GLuint loadInShader (char const*, GLenum const&);
-
 };
 
 extern Graphics g;

@@ -109,10 +109,14 @@ Graphics::Graphics (GLfloat const& width_, GLfloat const& height_, char const* v
     scale(1.0f);
 }
 
-void Graphics::setVertices (std::vector<Vertex> const& vertices)
+void Graphics::addSurface (iso_uint_t const& isolevel, std::vector<Vertex> const& surface)
 {
-    mVertices = vertices;
-    glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex)*mVertices.size(), mVertices.data(), GL_DYNAMIC_DRAW);
+    if (surface.size() == 0)
+        return;
+    size_t end{mSurfaces.size()};
+    mSurfaces.insert(mSurfaces.end(), surface.begin(), surface.end());
+    mSurfaceIndexMap[isolevel] = {end, surface.size()};
+    glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex)*mSurfaces.size(), mSurfaces.data(), GL_DYNAMIC_DRAW);
 }
 
 void Graphics::setCam (glm::vec3 const& camPos, glm::vec3 const& camDir)
@@ -152,8 +156,8 @@ void Graphics::render (double const& t, double const&)
     double xpos, ypos;
     glfwGetCursorPos(mWindow, &xpos, &ypos);
     glfwSetCursorPos(mWindow, mWidth/2, mHeight/2);
-    mHoriAngle += 3*(glfwGetTime()-t)*(xpos-mWidth/2);
-    mVertAngle += 3*(glfwGetTime()-t)*(ypos-mHeight/2);
+    mHoriAngle += 6*(glfwGetTime()-t)*(mWidth/2-xpos);
+    mVertAngle += 6*(glfwGetTime()-t)*(mHeight/2-ypos);
 
     mCamDir = glm::vec3(
         cos(mVertAngle) * sin(mHoriAngle),
@@ -169,27 +173,27 @@ void Graphics::render (double const& t, double const&)
     glm::vec3 moveVec{0.0f};
     if (glfwGetKey(mWindow, GLFW_KEY_S) == GLFW_PRESS)
     {
-        moveVec -= 0.1f * mCamDir;
+        moveVec -= 0.3f * mCamDir;
     }
     if (glfwGetKey(mWindow, GLFW_KEY_W) == GLFW_PRESS)
     {
-        moveVec += 0.1f * mCamDir;
+        moveVec += 0.3f * mCamDir;
     }
     if (glfwGetKey(mWindow, GLFW_KEY_Q) == GLFW_PRESS)
     {
-        moveVec -= 0.1f * up;
+        moveVec -= 0.3f * up;
     }
     if (glfwGetKey(mWindow, GLFW_KEY_E) == GLFW_PRESS)
     {
-        moveVec += 0.1f * up;
+        moveVec += 0.3f * up;
     }
     if (glfwGetKey(mWindow, GLFW_KEY_A) == GLFW_PRESS)
     {
-        moveVec -= 0.1f * right;
+        moveVec -= 0.3f * right;
     }
     if (glfwGetKey(mWindow, GLFW_KEY_D) == GLFW_PRESS)
     {
-        moveVec += 0.1f * right;
+        moveVec += 0.3f * right;
     }
     if (length(moveVec) > 0.00001f)
     {
@@ -197,11 +201,13 @@ void Graphics::render (double const& t, double const&)
     }
     mViewMat = glm::lookAt(mCamPos, mCamPos+mCamDir, up); 
     glUniformMatrix4fv(3, 1, GL_FALSE, glm::value_ptr(mViewMat));
-
     glUniform3f(9, mCamPos.x, mCamPos.y, mCamPos.z);
     
-    glDrawArrays(GL_TRIANGLES, 0, mVertices.size());
-    
+    for (auto const& isoIndPair: mSurfaceIndexMap)
+    {
+        glUniform1ui(5, isoIndPair.first);
+        glDrawArrays(GL_TRIANGLES, isoIndPair.second.first, isoIndPair.second.second);
+    }
     glfwSwapBuffers(mWindow);
 }
 

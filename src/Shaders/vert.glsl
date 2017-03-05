@@ -45,17 +45,15 @@ void main(void)
     float p = length(position);
     if (colorScheme == 0)     
     {
-        vs_out.color = vec4(mix(pallete[kInt-1], pallete[kInt], k-kInt), 1.0);
-        if (val == 30)
-            vs_out.color = vec4(1.0);
+        vs_out.color = vec4(mix(pallete[kInt-1], pallete[kInt], k-kInt), float(val)/float(maxVal));
      //   vs_out.color = vec4(vec3(0.7*p, 0.5*p, 0.5*p), 1.0);
      //   vs_out.color = vec4(float(val-50)/float(maxVal-50), 0.0, 1.0-float(val-50)/float(maxVal-50), float(val-50)/float(maxVal-50));
     }
 
     gl_Position = pMat*vMat*mMat*vec4(scalar*position, 1.0);
 
-//    vec3 pos = mat3(vMat*mMat) * scalar * position; 
-//    vec3 l = normalize(mat3(vMat*mMat)*camPos-pos);
-//    float brightness = clamp(abs(dot(mat3(vMat*mMat)*normal, l)), 0.0, 1.0);
-//    vs_out.color = vec4((ambient + brightness * lightIntensities) * vs_out.color.rgb, vs_out.color.a);
+    vec3 pos = mat3(vMat*mMat) * scalar * position; 
+    vec3 l = normalize(mat3(vMat*mMat)*camPos-pos);
+    float brightness = clamp(abs(dot(mat3(vMat*mMat)*normal, l)), 0.0, 1.0);
+    vs_out.color = vec4((ambient + brightness * lightIntensities) * vs_out.color.rgb, vs_out.color.a);
 }

@@ -1,4 +1,4 @@
-//Uses code from 
+//Based on code from 
 //http://paulbourke.net/geometry/polygonise/
 
 #include "marching_cubes.h"
@@ -58,6 +58,7 @@ bool writeFile (std::string const& comment, Grid const& grid, char const* flName
             }
         }
     }
+
     fl.close();
     return true;
 }
@@ -70,18 +71,20 @@ bool readFile (char const* flName, Grid& grid)
     fl>>grid.mDim[0]; fl>>grid.mDim[1]; fl>>grid.mDim[2]; fl.ignore();
     fl>>grid.mSize[0]; fl>>grid.mSize[1]; fl>>grid.mSize[2]; fl.ignore();
     fl>>grid.mOrigin[0]; fl>>grid.mOrigin[1]; fl>>grid.mOrigin[2]; fl.ignore();
-    // We should check the data type here
+    // Note: I should check the data type here
     fl.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
     resizeGridData(grid.mGrid, grid.mDim);
     unsigned i=0, j=0, k=0;
+    char c;
     for (unsigned k = 0; k < grid.mDim[2]; ++k)
     {
         for (unsigned j = 0; j < grid.mDim[1]; ++j)
         {
             for (unsigned i = 0; i < grid.mDim[0]; ++i)
             {
-                fl>>grid.mGrid[i][j][k];
+                fl.get(c);
+                grid.mGrid[i][j][k] = c;
             }
         }
     }
