@@ -2,19 +2,16 @@
 
 layout (location=0) in vec3 position;
 layout (location=1) in vec3 normal;
-layout (location=2) in uint val;
 
-layout (location=3) uniform mat4 pMat;
-layout (location=4) uniform mat4 vMat;
-layout (location=5) uniform mat4 mMat;
+layout (location=2) uniform mat4 pMat;
+layout (location=3) uniform mat4 vMat;
+layout (location=4) uniform mat4 mMat;
 
-layout (location=6) uniform float max;
-layout (location=7) uniform float min;
-layout (location=8) uniform float scalar;
-layout (location=9) uniform uint colorScheme;
-layout (location=10) uniform uint maxVal;
-
-layout (location=11) uniform vec3 camPos;
+layout (location=5) uniform uint val;
+layout (location=6) uniform uint maxVal;
+layout (location=7) uniform float scalar;
+layout (location=8) uniform uint colorScheme;
+layout (location=9) uniform vec3 camPos;
 
 uniform vec3 lightIntensities = vec3(0.8);
 uniform vec3 ambient = vec3(0.4);
@@ -49,7 +46,8 @@ void main(void)
     if (colorScheme == 0)     
     {
         vs_out.color = vec4(mix(pallete[kInt-1], pallete[kInt], k-kInt), 1.0);
-        vs_out.color = vec4(1.0);
+        if (val == 30)
+            vs_out.color = vec4(1.0);
      //   vs_out.color = vec4(vec3(0.7*p, 0.5*p, 0.5*p), 1.0);
      //   vs_out.color = vec4(float(val-50)/float(maxVal-50), 0.0, 1.0-float(val-50)/float(maxVal-50), float(val-50)/float(maxVal-50));
     }
