@@ -97,8 +97,10 @@ Graphics::Graphics (GLfloat const& width_, GLfloat const& height_, char const* v
 
     glGenVertexArrays(1, &mVao);
     glGenBuffers(1, &mVbo);
+    glGenBuffers(1, &mEbo);
     glBindVertexArray(mVao);
     glBindBuffer(GL_ARRAY_BUFFER, mVbo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mEbo);
 
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, mPosition)));
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, mNormal)));
@@ -109,25 +111,35 @@ Graphics::Graphics (GLfloat const& width_, GLfloat const& height_, char const* v
     scale(1.0f);
 }
 
-void Graphics::addSurface (iso_uint_t const& isolevel, std::vector<Vertex> const& surface)
+void Graphics::addSurface (iso_uint_t const& isolevel, std::vector<Vertex> const& surfaceVerts, std::vector<unsigned> const& surfaceInds)
 {
-    if (surface.size() == 0)
+    if (surfaceInds.size() == 0)
         return;
-    size_t end{mSurfaces.size()};
-    mSurfaces.insert(mSurfaces.end(), surface.begin(), surface.end());
-    mSurfaceIndexMap[isolevel] = {end, surface.size()};
-    glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex)*mSurfaces.size(), mSurfaces.data(), GL_DYNAMIC_DRAW);
+    size_t vertOffset{mVertices.size()}, indOffset{mVertices.size()};
+    mVertices.insert(mVertices.end(), surfaceVerts.begin(), surfaceVerts.end());
+    mIndices.insert(mIndices.end(), surfaceInds.begin(), surfaceInds.end());
+    for (unsigned i = indOffset; i < mIndices.size(); ++i)
+    {
+        mIndices[i] += vertOffset;
+    }
+
+    if (mSurfaceIndexMap.find(isolevel) == mSurfaceIndexMap.end())
+        mSurfaceIndexMap[isolevel] = {{indOffset, surfaceInds.size()}};
+    else 
+        mSurfaceIndexMap[isolevel].push_back({indOffset, surfaceInds.size()});
+    glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex)*mVertices.size(), mVertices.data(), GL_DYNAMIC_DRAW);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned)*mIndices.size(), mIndices.data(), GL_DYNAMIC_DRAW);
 }
 
-void Graphics::setCam (glm::vec3 const& camPos, glm::vec3 const& camDir)
+void Graphics::setCam (vec3 const& camPos, vec3 const& camDir)
 {
 	mCamPos = camPos;
     mCamDir = glm::normalize(camDir);
-//	mHoriAngle = acos(dot(glm::vec3(0.0f,0.0f,1.0f), mCamDir));
-//	mVertAngle = acos(dot(glm::vec3(0.0f,1.0f,0.0f), mCamDir));
+//	mHoriAngle = acos(dot(vec3(0.0f,0.0f,1.0f), mCamDir));
+//	mVertAngle = acos(dot(vec3(0.0f,1.0f,0.0f), mCamDir));
 }
 
-void Graphics::moveCam (glm::vec3 const& inc)
+void Graphics::moveCam (vec3 const& inc)
 {
     mCamPos += inc;
 }
@@ -159,18 +171,18 @@ void Graphics::render (double const& t, double const&)
     mHoriAngle += 6*(glfwGetTime()-t)*(mWidth/2-xpos);
     mVertAngle += 6*(glfwGetTime()-t)*(mHeight/2-ypos);
 
-    mCamDir = glm::vec3(
+    mCamDir = vec3(
         cos(mVertAngle) * sin(mHoriAngle),
         sin(mVertAngle),
         cos(mVertAngle) * cos(mHoriAngle)
     );
-    glm::vec3 right{
+    vec3 right{
         sin(mHoriAngle - 3.14f/2.0f),
         0,
         cos(mHoriAngle - 3.14f/2.0f)
     };
-    glm::vec3 up = glm::cross(right, mCamDir);
-    glm::vec3 moveVec{0.0f};
+    vec3 up = glm::cross(right, mCamDir);
+    vec3 moveVec{0.0f};
     if (glfwGetKey(mWindow, GLFW_KEY_S) == GLFW_PRESS)
     {
         moveVec -= 0.3f * mCamDir;
@@ -203,10 +215,13 @@ void Graphics::render (double const& t, double const&)
     glUniformMatrix4fv(3, 1, GL_FALSE, glm::value_ptr(mViewMat));
     glUniform3f(9, mCamPos.x, mCamPos.y, mCamPos.z);
     
-    for (auto const& isoIndPair: mSurfaceIndexMap)
+    for (auto const& isoIndVecPair: mSurfaceIndexMap)
     {
-        glUniform1ui(5, isoIndPair.first);
-        glDrawArrays(GL_TRIANGLES, isoIndPair.second.first, isoIndPair.second.second);
+        glUniform1ui(5, isoIndVecPair.first);
+        for (auto const& startEndPair: isoIndVecPair.second)
+        {
+            glDrawElements(GL_TRIANGLES, startEndPair.second, GL_UNSIGNED_INT, (void*)startEndPair.first);
+        }
     }
     glfwSwapBuffers(mWindow);
 }
@@ -231,5 +246,3 @@ void Graphics::mustUpdate ()
 {
     fMustUpdate = true;
 }
-
-Graphics g{1920, 1080, "/home/jhazelden/Cpp/OpenGL/volumeRenderer/src/Shaders/vert.glsl", "/home/jhazelden/Cpp/OpenGL/volumeRenderer/src/Shaders/frag.glsl", "Volume renderer v0.1"};

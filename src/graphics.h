@@ -16,14 +16,15 @@
 class Graphics 
 {
 private:
-    std::vector<Vertex> mSurfaces;
-    std::map<iso_uint_t, std::pair<size_t, size_t>> mSurfaceIndexMap;
-	GLuint mVbo, mVao;
+    std::vector<Vertex> mVertices;
+    std::vector<unsigned> mIndices;
+    std::map<iso_uint_t, std::vector<std::pair<size_t, size_t>>> mSurfaceIndexMap;
+	GLuint mVbo, mEbo, mVao;
     GLfloat mWidth, mHeight;
     GLuint mShaderProgram;
     glm::mat3 mPmat, mVmat, mMmat;
     GLFWwindow* mWindow;
-    glm::vec3 mCamPos, mCamDir;
+    vec3 mCamPos, mCamDir;
     double mHoriAngle, mVertAngle;
     GLfloat mViewScalar;
     GLuint mColorScheme;
@@ -38,9 +39,9 @@ public:
 
     Graphics (GLfloat const&, GLfloat const&, char const*, char const*, const char* title="Untitled Window");
 
-    void setCam (glm::vec3 const&, glm::vec3 const&);
-    void moveCam (glm::vec3 const&);
-    void addSurface (iso_uint_t const&, std::vector<Vertex> const&); 
+    void setCam (vec3 const&, vec3 const&);
+    void moveCam (vec3 const&);
+    void addSurface (iso_uint_t const& isolevel, std::vector<Vertex> const& surfaceVerts, std::vector<unsigned> const& surfaceInds);
     void scale (GLfloat const&);
 
     inline GLFWwindow* const& getWindow () const {return mWindow;};
@@ -56,6 +57,12 @@ public:
 };
 
 extern Graphics g;
+
+struct Mesh
+{
+    std::vector<vec3> mVertices;
+    std::vector<unsigned> mIndices;
+};
 
 struct 
 {

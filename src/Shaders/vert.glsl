@@ -13,7 +13,7 @@ layout (location=7) uniform float scalar;
 layout (location=8) uniform uint colorScheme;
 layout (location=9) uniform vec3 camPos;
 
-uniform vec3 lightIntensities = vec3(0.8);
+uniform vec3 lightIntensities = vec3(0.5);
 uniform vec3 ambient = vec3(0.4);
 
 out VS_OUT
@@ -45,9 +45,8 @@ void main(void)
     float p = length(position);
     if (colorScheme == 0)     
     {
-        vs_out.color = vec4(mix(pallete[kInt-1], pallete[kInt], k-kInt), float(val)/float(maxVal));
-     //   vs_out.color = vec4(vec3(0.7*p, 0.5*p, 0.5*p), 1.0);
-     //   vs_out.color = vec4(float(val-50)/float(maxVal-50), 0.0, 1.0-float(val-50)/float(maxVal-50), float(val-50)/float(maxVal-50));
+        vs_out.color = vec4(abs(cos(p)), abs(sin(p)), 0.0, 1.0);
+     //   vs_out.color = vec4(mix(pallete[kInt-1], pallete[kInt], k-kInt), 1.0);
     }
 
     gl_Position = pMat*vMat*mMat*vec4(scalar*position, 1.0);

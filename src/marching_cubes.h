@@ -36,7 +36,7 @@ bool writeFile (std::string const&, Grid const&, char const*);
 bool readFile (char const*, Grid&);
 
 vec3 interpolate(Grid const&, unsigned const&, unsigned const&, unsigned const&);
-void polygonise(Grid const&, iso_uint_t const&, std::vector<Vertex>&);
+void polygonise(Grid const&, iso_uint_t const&, std::vector<Vertex>&, std::vector<unsigned>&);
 
 
 #endif //MARCHING_CUBES_H

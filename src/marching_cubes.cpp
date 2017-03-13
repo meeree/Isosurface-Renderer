@@ -1,9 +1,13 @@
-//Based on code from 
+//Uses code based on code from 
 //http://paulbourke.net/geometry/polygonise/
 
 #include "marching_cubes.h"
 #include <limits>
 #include <iostream>
+#include <algorithm>
+#include <unordered_map>
+#include <map>
+#include <glm/gtx/string_cast.hpp>
 
 void resizeGridData (grid_t& gridData, size_t const (&dim)[3])
 {
@@ -75,16 +79,28 @@ bool readFile (char const* flName, Grid& grid)
     fl.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
     resizeGridData(grid.mGrid, grid.mDim);
-    unsigned i=0, j=0, k=0;
-    char c;
+    iso_uint_t gridData [grid.mDim[0]*grid.mDim[1]];
+//    for (unsigned i = 0; i < grid.mDim[0]; ++i)
+//    {
+//        for (unsigned j = 0; j < grid.mDim[1]; ++j)
+//        {
+//            fl.read((char*)grid.mGrid[i][j].data(), grid.mDim[2]);
+//            for (unsigned i = 0; i < grid.mDim[0]; ++i)
+//            {
+//                fl.get(c);
+//                grid.mGrid[i][j][k] = c;
+//            }
+//        }
+//    }
+
     for (unsigned k = 0; k < grid.mDim[2]; ++k)
     {
+        fl.read((char*)gridData, grid.mDim[0]*grid.mDim[1]);
         for (unsigned j = 0; j < grid.mDim[1]; ++j)
         {
             for (unsigned i = 0; i < grid.mDim[0]; ++i)
             {
-                fl.get(c);
-                grid.mGrid[i][j][k] = c;
+                grid.mGrid[i][j][k] = gridData[i+j*grid.mDim[0]];
             }
         }
     }
@@ -93,7 +109,7 @@ bool readFile (char const* flName, Grid& grid)
 }
 
 
-static int16_t edgeTable[256]={
+static uint16_t edgeTable[256]{
     0x0  , 0x109, 0x203, 0x30a, 0x406, 0x50f, 0x605, 0x70c,
     0x80c, 0x905, 0xa0f, 0xb06, 0xc0a, 0xd03, 0xe09, 0xf00,
     0x190, 0x99 , 0x393, 0x29a, 0x596, 0x49f, 0x795, 0x69c,
@@ -127,8 +143,8 @@ static int16_t edgeTable[256]={
     0xf00, 0xe09, 0xd03, 0xc0a, 0xb06, 0xa0f, 0x905, 0x80c,
     0x70c, 0x605, 0x50f, 0x406, 0x30a, 0x203, 0x109, 0x0   };
 
-static int8_t triTable[256][16] =
-    {{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+static int8_t triTable[256][16]{
+    {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
     {0, 8, 3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
     {0, 1, 9, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
     {1, 8, 3, 9, 8, 1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
@@ -407,8 +423,29 @@ vec3 vertexInterp(iso_uint_t const& isolevel, vec3 const& p1, vec3 const& p2, is
             p1.z + mu * (p2.z - p1.z)};
 }
 
-void polygonise(Grid const& grid, iso_uint_t const& isolevel, std::vector<Vertex>& vertices)
+// Move collision table used to determine the edge to check for collision
+// in the map. For instance, if we lookup edge 0 we get (010(binary),4), 
+// corresponding to "edge 4 on cube situated at x-0,y-1,z-0." 
+static std::tuple<uint8_t, uint8_t> moveCollisionTable[12]{
+    std::make_tuple(2,0),
+    std::make_tuple(2,5),
+    std::make_tuple(2,6),
+    std::make_tuple(2,7),
+
+    std::make_tuple(-1,-1),
+    std::make_tuple(-1,-1),
+    std::make_tuple(1,4),
+    std::make_tuple(4,5),
+
+    std::make_tuple(4,9),
+    std::make_tuple(-1,-1),
+    std::make_tuple(1,9),
+    std::make_tuple(1,8)
+};
+
+void polygonise(Grid const& grid, iso_uint_t const& isolevel, std::vector<Vertex>& vertices, std::vector<unsigned>& indices)
 {
+    std::map<std::tuple<unsigned, unsigned, unsigned, uint8_t>, unsigned> edgePosIndexMap;
     for (unsigned k = 0; k < grid.mDim[2]-1; ++k)
     {
         for (unsigned j = 0; j < grid.mDim[1]-1; ++j)
@@ -435,9 +472,9 @@ void polygonise(Grid const& grid, iso_uint_t const& isolevel, std::vector<Vertex
                     interpolate(grid, i+1, j+1, k),
                     interpolate(grid, i, j+1, k)
                 };
-                vec3 vertlist[12];
+                vec3 vertList[12];
 
-                int cubeindex = 0;
+                uint8_t cubeindex = 0;
                 if (values[0] < isolevel)
                      cubeindex |= 1;
                 if (values[1] < isolevel)
@@ -459,43 +496,74 @@ void polygonise(Grid const& grid, iso_uint_t const& isolevel, std::vector<Vertex
                     continue;
 
                 if (edgeTable[cubeindex] & 1)
-                    vertlist[0] = vertexInterp(isolevel,positions[0],positions[1],values[0],values[1]);
+                    vertList[0] = vertexInterp(isolevel,positions[0],positions[1],values[0],values[1]);
                 if (edgeTable[cubeindex] & 2)
-                    vertlist[1] = vertexInterp(isolevel,positions[1],positions[2],values[1],values[2]);
+                    vertList[1] = vertexInterp(isolevel,positions[1],positions[2],values[1],values[2]);
                 if (edgeTable[cubeindex] & 4)
-                    vertlist[2] = vertexInterp(isolevel,positions[2],positions[3],values[2],values[3]);
+                    vertList[2] = vertexInterp(isolevel,positions[2],positions[3],values[2],values[3]);
                 if (edgeTable[cubeindex] & 8)
-                    vertlist[3] = vertexInterp(isolevel,positions[3],positions[0],values[3],values[0]);
+                    vertList[3] = vertexInterp(isolevel,positions[3],positions[0],values[3],values[0]);
                 if (edgeTable[cubeindex] & 16)
-                    vertlist[4] = vertexInterp(isolevel,positions[4],positions[5],values[4],values[5]);
+                    vertList[4] = vertexInterp(isolevel,positions[4],positions[5],values[4],values[5]);
                 if (edgeTable[cubeindex] & 32)
-                    vertlist[5] = vertexInterp(isolevel,positions[5],positions[6],values[5],values[6]);
+                    vertList[5] = vertexInterp(isolevel,positions[5],positions[6],values[5],values[6]);
                 if (edgeTable[cubeindex] & 64)
-                    vertlist[6] = vertexInterp(isolevel,positions[6],positions[7],values[6],values[7]);
+                    vertList[6] = vertexInterp(isolevel,positions[6],positions[7],values[6],values[7]);
                 if (edgeTable[cubeindex] & 128)
-                    vertlist[7] = vertexInterp(isolevel,positions[7],positions[4],values[7],values[4]);
+                    vertList[7] = vertexInterp(isolevel,positions[7],positions[4],values[7],values[4]);
                 if (edgeTable[cubeindex] & 256)
-                    vertlist[8] = vertexInterp(isolevel,positions[0],positions[4],values[0],values[4]);
+                    vertList[8] = vertexInterp(isolevel,positions[0],positions[4],values[0],values[4]);
                 if (edgeTable[cubeindex] & 512)
-                    vertlist[9] = vertexInterp(isolevel,positions[1],positions[5],values[1],values[5]);
+                    vertList[9] = vertexInterp(isolevel,positions[1],positions[5],values[1],values[5]);
                 if (edgeTable[cubeindex] & 1024)
-                    vertlist[10] = vertexInterp(isolevel,positions[2],positions[6],values[2],values[6]);
+                    vertList[10] = vertexInterp(isolevel,positions[2],positions[6],values[2],values[6]);
                 if (edgeTable[cubeindex] & 2048)
-                    vertlist[11] = vertexInterp(isolevel,positions[3],positions[7],values[3],values[7]);
+                    vertList[11] = vertexInterp(isolevel,positions[3],positions[7],values[3],values[7]);
 
-                unsigned ntriang = 0;
                 for (unsigned ind = 0; triTable[cubeindex][ind] != -1; ind += 3) 
                 {
-                    vertices.push_back({
-                        vertlist[triTable[cubeindex][ind]], 
-                        {0,0,0}});
-                    vertices.push_back({
-                        vertlist[triTable[cubeindex][ind+1]], 
-                        {0,0,0}});
-                    vertices.push_back({
-                        vertlist[triTable[cubeindex][ind+2]], 
-                        {0,0,0}});
-                    ++ntriang;
+//                    indices.push_back(vertices.size());
+//                    vertices.push_back({vertList[triTable[cubeindex][ind]],{0,0,0}});
+//                    indices.push_back(vertices.size());
+//                    vertices.push_back({vertList[triTable[cubeindex][ind+1]],{0,0,0}});
+//                    indices.push_back(vertices.size());
+//                    vertices.push_back({vertList[triTable[cubeindex][ind+2]],{0,0,0}});
+                    for (uint8_t coord = 0; coord < 3; ++coord)
+                    {
+                        // Note: we cast here because we can't get a -1.
+                        uint8_t edgeIndex{(uint8_t)triTable[cubeindex][ind+coord]};
+                        std::tuple<uint8_t,uint8_t> mvDir{moveCollisionTable[edgeIndex]};
+
+                        // Calculate offset from 3 bit uint:
+                        // 100 corresponds to (-1,0,0),
+                        // 010 corresponds to (0,-1,0),
+                        // 001 corresponds to (0,0,-1).
+                        unsigned offsetMove[3]{
+                            i-(std::get<0>(mvDir)==4),
+                            j-(std::get<0>(mvDir)==2),
+                            k-(std::get<0>(mvDir)==1)};
+                        auto edgePos = std::make_tuple(offsetMove[0],offsetMove[1],offsetMove[2],edgeIndex);
+                        if (std::get<0>(mvDir) == (uint8_t)-1)
+                        {
+                            edgePosIndexMap[edgePos] = vertices.size();
+                            indices.push_back(vertices.size());
+                            vertices.push_back({vertList[edgeIndex],{0,0,0}});
+                        }
+                        else if (edgePosIndexMap.find(edgePos) != edgePosIndexMap.end())
+                        {
+                            indices.push_back(edgePosIndexMap[edgePos]);
+//                            if (edgeIndex == 2 || edgeIndex == 3 || edgeIndex == 11)
+//                                //NOTE: THIS MAY BE SLOW. CHECK!
+//                                edgePosIndexMap.erase(edgePos);
+                        }
+                        else
+                        {
+                            indices.push_back(vertices.size());
+                            if (edgeIndex != 2 && edgeIndex != 3 && edgeIndex != 11)
+                                edgePosIndexMap[edgePos] = vertices.size();
+                            vertices.push_back({vertList[edgeIndex],{0,0,0}});
+                        }
+                    }
                 }
             }
         }
