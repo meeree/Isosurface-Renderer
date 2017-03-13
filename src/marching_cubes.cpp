@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <unordered_map>
 #include <map>
-#include <glm/gtx/string_cast.hpp>
 
 void resizeGridData (grid_t& gridData, size_t const (&dim)[3])
 {

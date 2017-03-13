@@ -46,7 +46,8 @@ void main(void)
     float len = length(position);
     if (colorScheme == 0)     
     {
-        vs_out.color = vec4(abs(sin(p)), abs(cos(p)), 0.0, 1.0);
+//        vs_out.color = vec4(abs(sin(p)), abs(cos(p)), 0.0, 1.0);
+        vs_out.color = vec4(1.0);
 //        vs_out.color = vec4(kInt == 15 ? pallete[15] : mix(pallete[kInt], pallete[kInt+1], k-kInt), 0.75+0.25*percent);
     }
 

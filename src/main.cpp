@@ -36,7 +36,7 @@ void keyCallback(GLFWwindow*, int key, int, int action, int)
     }
 }
 
-void addNormalsAndClean (std::vector<Vertex>& vertices, std::vector<unsigned>& indices)
+void getNormalsAndClean (std::vector<Vertex>& vertices, std::vector<unsigned>& indices, std::vector<glm::vec3>& faceNormals, bool const& normalize=true)
 {
     for (unsigned i = 0; i < indices.size(); i += 3)
     {
@@ -49,100 +49,83 @@ void addNormalsAndClean (std::vector<Vertex>& vertices, std::vector<unsigned>& i
             indices[i] = -1;
             indices[i+1] = -1;
             indices[i+2] = -1; 
+            faceNormals[i/3].x = NAN;
             continue;
         }
-        else 
-            nm = glm::normalize(nm);
-
-        v1.mNormal = nm;
-        v2.mNormal = nm;
-        v3.mNormal = nm;
+        faceNormals[i/3] = normalize ? glm::normalize(nm) : nm;
     }
-    std::cout<<indices.size()<<std::endl;
+    
     indices.erase(std::remove(indices.begin(), indices.end(), -1), indices.end()); 
-    std::cout<<indices.size()<<std::endl;
+    faceNormals.erase(std::remove_if(faceNormals.begin(), faceNormals.end(), [](glm::vec3 const& v){return std::isnan(v.x);}), faceNormals.end()); 
 }
 
-void addAveragedNormals (std::vector<Vertex>& vertices)
+void addAvgNormals (std::vector<Vertex>& vertices, std::vector<unsigned>& indices, std::vector<glm::vec3>&& faceNormals, bool const& normalize=true)
 {
-    for (unsigned i = 0; i < vertices.size(); i += 3)
+    for (auto& v: vertices)
     {
-        Vertex& v1{vertices[i]};
-        Vertex& v2{vertices[i+1]};
-        Vertex& v3{vertices[i+2]};
-        vec3 nm{glm::cross(v2.mPosition-v1.mPosition, v3.mPosition-v1.mPosition)};
-        v1.mNormal = nm;
-        v2.mNormal = nm;
-        v3.mNormal = nm;
+        v.mNormal = {0.0f,0.0f,0.0f};        
     }
-    vec3 normals[vertices.size()];
-    for (unsigned i = 0; i < vertices.size(); ++i)
+    for (unsigned i = 0; i < indices.size(); i += 3)
     {
-        auto vert = vertices[i];
-        auto pos = vert.mPosition;
-        vec3 sum{0.0f,0.0f,0.0f};
-        unsigned count{0};
-        for (unsigned j = 0; j < vertices.size(); ++j)
+        for (uint8_t coord = 0; coord < 3; ++coord)
         {
-            Vertex& v1{vertices[j]};
-            if (length(v1.mPosition-pos) < 0.0001)
-            {
-                sum += v1.mNormal;
-                ++count;
-            }
+            Vertex& v{vertices[indices[i+coord]]};
+            v.mNormal += std::move(faceNormals[i/3]);
         }
-        normals[i] = glm::normalize(sum/count);
     }
-    for (unsigned i = 0; i < vertices.size(); ++i)
+    if (normalize)
     {
-        vertices[i].mNormal = normals[i];
+        for (auto& v: vertices)
+        {
+            v.mNormal = glm::normalize(v.mNormal);        
+        }
     }
 }
 
 iso_uint_t stellaTransform (double const& x, double const& y, double const& z, unsigned const& iterMax, double const& capSqr, unsigned const& power)
 {
-//    double x_{x}, y_{y}, z_{z};
-//    iso_uint_t p;
-//    for (p = 0; p < iterMax; ++p)
-//    {
-//        auto oldX = x_;
-//        if (power == 3)
-//        {
-//            auto oldY = y_;
-//            x_ = x_*x_*x_ - y_*y_*z_ - z_*z_*y_ - 5*x_*y_*z_;
-//            y_ = y_*y_*y_ - y_*y_*z_ + 3*(y_*y_*oldX + oldX*oldX*y_);
-//            z_ = z_*z_*z_ - z_*z_*oldY + 3*(z_*z_*oldX + oldX*oldX*z_);
-//        }
-//        else if (power == 2)
-//        {
-//            auto oldY = y_;
-//            x_ = (x_*x_-y_*y_)*(1-z_*z_/(x_*x_+y_*y_));
-//            y_ = 2*oldX*y_*(1-z_*z_/(oldX*oldX+y_*y_));
-//            z_ = -2*z_*sqrt(oldX*oldX+oldY*oldY);
-//            //x_ = x_*x_-2*y_*z_;
-//            //y_ = 2*oldX*y_+y_*y_;
-//            //z_ = 2*oldX*z_+z_*z_;
-//        }
-//
-//        x_ += x;
-//        y_ += y;
-//        z_ += z;
-//        
-//        double distSqr{x_*x_+y_*y_+z_*z_};
-//        if (distSqr > capSqr)
-//            break;
-//    }
-//    return p;
-    auto ellipsoid = 1.0-(pow(x/*-0.5*cos(sqrt(x*x+y*y))*/,2)/4+pow(y/*-0.5*sin(sqrt(x*x+y*y))*/,2));
-    auto ellipsoidY = sqrt(1.0-z*z-x*x/4);
-    return z*z<=ellipsoid
-           || (y>=-ellipsoidY-0.5 && y<=-ellipsoidY-0.3 && 0.5>=x*x/4+z*z)
-           || (x>=0.0 && x<=2+0.2 && 0.5/4>=z*z+y*y)
+    double x_{x}, y_{y}, z_{z};
+    iso_uint_t p;
+    for (p = 0; p < iterMax; ++p)
+    {
+        auto oldX = x_;
+        if (power == 3)
+        {
+            auto oldY = y_;
+            x_ = x_*x_*x_ - y_*y_*z_ - z_*z_*y_ - 5*x_*y_*z_;
+            y_ = y_*y_*y_ - y_*y_*z_ + 3*(y_*y_*oldX + oldX*oldX*y_);
+            z_ = z_*z_*z_ - z_*z_*oldY + 3*(z_*z_*oldX + oldX*oldX*z_);
+        }
+        else if (power == 2)
+        {
+            auto oldY = y_;
+            x_ = (x_*x_-y_*y_)*(1-z_*z_/(x_*x_+y_*y_));
+            y_ = 2*oldX*y_*(1-z_*z_/(oldX*oldX+y_*y_));
+            z_ = -2*z_*sqrt(oldX*oldX+oldY*oldY);
+            //x_ = x_*x_-2*y_*z_;
+            //y_ = 2*oldX*y_+y_*y_;
+            //z_ = 2*oldX*z_+z_*z_;
+        }
 
-           || (y>=-1.05 && y<=0 && 0.001>=pow(x-sqrt(2.0)+sqrt(0.001)/2,2)+z*z)
-           || (y>=-1.05 && y<=0 && 0.001>=pow(x+sqrt(2.0)-sqrt(0.001)/2,2)+z*z)
-           || (y>=-1.05 && y<=0 && 0.001>=x*x+pow(z-sqrt(0.5)+sqrt(0.001),2))
-           || (y>=-1.05 && y<=0 && 0.001>=x*x+pow(z+sqrt(0.5)-sqrt(0.001),2));
+        x_ += x;
+        y_ += y;
+        z_ += z;
+        
+        double distSqr{x_*x_+y_*y_+z_*z_};
+        if (distSqr > capSqr)
+            break;
+    }
+    return p;
+//    auto ellipsoid = 1.0-(pow(x/*-0.5*cos(sqrt(x*x+y*y))*/,2)/4+pow(y/*-0.5*sin(sqrt(x*x+y*y))*/,2));
+//    auto ellipsoidY = sqrt(1.0-z*z-x*x/4);
+//    return z*z<=ellipsoid
+//           || (y>=-ellipsoidY-0.5 && y<=-ellipsoidY-0.3 && 0.5>=x*x/4+z*z)
+//           || (x>=0.0 && x<=2+0.2 && 0.5/4>=z*z+y*y)
+//
+//           || (y>=-1.05 && y<=0 && 0.001>=pow(x-sqrt(2.0)+sqrt(0.001)/2,2)+z*z)
+//           || (y>=-1.05 && y<=0 && 0.001>=pow(x+sqrt(2.0)-sqrt(0.001)/2,2)+z*z)
+//           || (y>=-1.05 && y<=0 && 0.001>=x*x+pow(z-sqrt(0.5)+sqrt(0.001),2))
+//           || (y>=-1.05 && y<=0 && 0.001>=x*x+pow(z+sqrt(0.5)-sqrt(0.001),2));
 }
 
 void stellaCorris (Grid& grid, unsigned const& iterMax, double const& capSqr, unsigned const& power)
@@ -185,7 +168,7 @@ int main ()
     unsigned iterMax = 15;
     GLfloat capSqr = 16;
     size_t dim[3]{300,300,300};
-    double size[3]{5.0,4.0,4.0};
+    double size[3]{4.0,4.0,4.0};
     double origin[3]{-2.0,-2.0,-2.0};
 
     grid_t gridData;
@@ -197,19 +180,13 @@ int main ()
 //    Grid grid;
 //    readFile("fl", grid);
 
-    std::vector<Vertex> surfaceVerts[2];
-    std::vector<unsigned> surfaceInds[2];
-    polygonise(grid, 1, surfaceVerts[0], surfaceInds[0]);
-    addNormalsAndClean(surfaceVerts[0], surfaceInds[0]);
-    g.addSurface(1, surfaceVerts[0], surfaceInds[0]);
-
-//    polygonise(grid, 3, surfaces[1]);
-//    constructNormals(surfaces[1]);
-//    g.addSurface(3, surfaces[1]);
-//    std::vector<Vertex> surface2 = surface;
-//    translateSurface(surface2, {0,5,0});
-//    addAveragedNormals(surface2);
-//    g.addSurface(1, surface2);
+    std::vector<Vertex> surfaceVerts;
+    std::vector<unsigned> surfaceInds;
+    polygonise(grid, 10, surfaceVerts, surfaceInds);
+    std::vector<glm::vec3> faceNormals(surfaceInds.size());
+    getNormalsAndClean(surfaceVerts, surfaceInds, faceNormals, false);
+    addAvgNormals(surfaceVerts, surfaceInds, std::move(faceNormals));
+    g.addSurface(10, surfaceVerts, surfaceInds);
 
     g.mustUpdate();
     GLFWAttrs.scalar = 10;
