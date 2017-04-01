@@ -17,9 +17,8 @@ class Graphics
 {
 private:
     std::vector<Vertex> mVertices;
-    std::vector<unsigned> mIndices;
-    std::map<iso_uint_t, std::vector<std::pair<size_t, size_t>>> mSurfaceIndexMap;
-	GLuint mVbo, mEbo, mVao;
+    std::vector<std::pair<iso_type_t, std::pair<size_t, size_t>>> mSurfaceIndexMap;
+	GLuint mVbo, mVao;
     GLfloat mWidth, mHeight;
     GLuint mShaderProgram;
     glm::mat3 mPmat, mVmat, mMmat;
@@ -31,6 +30,7 @@ private:
     static GLuint msColorSchemeCount;
 
     bool fMustUpdate;
+    bool fDrawAxes;
 
     void setShaders (char const*, char const*);
 
@@ -41,12 +41,13 @@ public:
 
     void setCam (vec3 const&, vec3 const&);
     void moveCam (vec3 const&);
-    void addSurface (iso_uint_t const& isolevel, std::vector<Vertex> const& surfaceVerts, std::vector<unsigned> const& surfaceInds);
+    void addSurface (iso_type_t const& isolevel, std::vector<Vertex> const& surfaceVerts);
     void scale (GLfloat const&);
 
     inline GLFWwindow* const& getWindow () const {return mWindow;};
 
     void mustUpdate ();
+    void toggleAxes (GLfloat const& sz=1.0f);
 
     void update ();
     void render (double const&, double const&);

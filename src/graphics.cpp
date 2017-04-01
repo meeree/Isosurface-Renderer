@@ -49,7 +49,7 @@ GLuint Graphics::loadInShader(char const *fname, GLenum const &shaderType)
     return shader;
 }
 
-GLuint Graphics::msColorSchemeCount = 1;
+GLuint Graphics::msColorSchemeCount = 2;
 
 void Graphics::setShaders (char const* vertLoc, char const* fragLoc)
 {
@@ -68,9 +68,10 @@ void Graphics::setShaders (char const* vertLoc, char const* fragLoc)
 }
 
 Graphics::Graphics (GLfloat const& width_, GLfloat const& height_, char const* vertLoc_, char const* fragLoc_, const char* title_)
-    : mWidth{width_}, mHeight{height_}, mColorScheme{0}, mViewScalar{1.0f}, mModMat{1.0f}, mViewMat{1.0f}, mHoriAngle{3.14}, mVertAngle{0.0}
+    : mWidth{width_}, mHeight{height_}, mColorScheme{0}, mViewScalar{1.0f}, mModMat{1.0f}, mViewMat{1.0f}, mHoriAngle{3.14}, mVertAngle{0.0}, fMustUpdate{false}, fDrawAxes{false}
 {
-    if(!glfwInit()) {
+    if(!glfwInit()) 
+    {
         std::cerr<<"failed to initialize glfw"<<std::endl;
         exit(EXIT_SUCCESS);
     }
@@ -80,14 +81,16 @@ Graphics::Graphics (GLfloat const& width_, GLfloat const& height_, char const* v
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
     mWindow = glfwCreateWindow(width_, height_, title_, NULL, NULL);
 
-    if(!mWindow) {
+    if(!mWindow) 
+    {
         std::cerr<<"failed to initialize window"<<std::endl;
         exit(EXIT_SUCCESS);
     }
     glfwMakeContextCurrent(mWindow);
 
     glewExperimental = GL_TRUE;
-    if(glewInit() != 0) {
+    if(glewInit() != 0) 
+    {
         std::cerr<<"failed to initialize glew"<<std::endl;
         exit(EXIT_SUCCESS);
     }
@@ -97,10 +100,8 @@ Graphics::Graphics (GLfloat const& width_, GLfloat const& height_, char const* v
 
     glGenVertexArrays(1, &mVao);
     glGenBuffers(1, &mVbo);
-    glGenBuffers(1, &mEbo);
     glBindVertexArray(mVao);
     glBindBuffer(GL_ARRAY_BUFFER, mVbo);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mEbo);
 
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, mPosition)));
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, mNormal)));
@@ -111,24 +112,11 @@ Graphics::Graphics (GLfloat const& width_, GLfloat const& height_, char const* v
     scale(1.0f);
 }
 
-void Graphics::addSurface (iso_uint_t const& isolevel, std::vector<Vertex> const& surfaceVerts, std::vector<unsigned> const& surfaceInds)
+void Graphics::addSurface (iso_type_t const& isolevel, std::vector<Vertex> const& surfaceVerts)
 {
-    if (surfaceInds.size() == 0)
-        return;
-    size_t vertOffset{mVertices.size()}, indOffset{mVertices.size()};
+    mSurfaceIndexMap.push_back({isolevel, {mVertices.size(), surfaceVerts.size()}});
     mVertices.insert(mVertices.end(), surfaceVerts.begin(), surfaceVerts.end());
-    mIndices.insert(mIndices.end(), surfaceInds.begin(), surfaceInds.end());
-    for (unsigned i = indOffset; i < mIndices.size(); ++i)
-    {
-        mIndices[i] += vertOffset;
-    }
-
-    if (mSurfaceIndexMap.find(isolevel) == mSurfaceIndexMap.end())
-        mSurfaceIndexMap[isolevel] = {{indOffset, surfaceInds.size()}};
-    else 
-        mSurfaceIndexMap[isolevel].push_back({indOffset, surfaceInds.size()});
     glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex)*mVertices.size(), mVertices.data(), GL_DYNAMIC_DRAW);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned)*mIndices.size(), mIndices.data(), GL_DYNAMIC_DRAW);
 }
 
 void Graphics::setCam (vec3 const& camPos, vec3 const& camDir)
@@ -153,6 +141,24 @@ void Graphics::update ()
 {
     glUniform1ui(8, mColorScheme);
     fMustUpdate = false;
+}
+
+//NOTE: THIS IS A TERRIBLE WAY OF DOING THINGS! THIS SHOULD BE WORKED ON!
+void Graphics::toggleAxes (GLfloat const& sz)
+{
+    if (!fDrawAxes)
+    {
+        mVertices.push_back({{0,0,0},{1,0,0}});
+        mVertices.push_back({{sz,0,0},{1,0,0}});
+        mVertices.push_back({{0,0,0},{0,1,0}});
+        mVertices.push_back({{0,sz,0},{0,1,0}});
+        mVertices.push_back({{0,0,0},{0,0,1}});
+        mVertices.push_back({{0,0,sz},{0,0,1}});
+        glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex)*mVertices.size(), mVertices.data(), GL_DYNAMIC_DRAW);
+    }
+    else
+        mVertices.erase(mVertices.end()-6, mVertices.end());
+    fDrawAxes = !fDrawAxes;
 }
 
 void Graphics::render (double const& t, double const&)
@@ -207,7 +213,7 @@ void Graphics::render (double const& t, double const&)
     {
         moveVec += 0.3f * right;
     }
-    if (length(moveVec) > 0.00001f)
+    if (length(moveVec) > FLT_EPSILON)
     {
         moveCam(moveVec);
     }
@@ -215,13 +221,16 @@ void Graphics::render (double const& t, double const&)
     glUniformMatrix4fv(3, 1, GL_FALSE, glm::value_ptr(mViewMat));
     glUniform3f(9, mCamPos.x, mCamPos.y, mCamPos.z);
     
-    for (auto const& isoIndVecPair: mSurfaceIndexMap)
+    if (fDrawAxes)
     {
-        glUniform1ui(5, isoIndVecPair.first);
-        for (auto const& startEndPair: isoIndVecPair.second)
-        {
-            glDrawElements(GL_TRIANGLES, startEndPair.second, GL_UNSIGNED_INT, (void*)startEndPair.first);
-        }
+        glUniform1i(10, 1);
+        glDrawArrays(GL_LINES, mVertices.size()-6, 6);
+        glUniform1i(10, 0);
+    }
+    for (auto const& isoIndPair: mSurfaceIndexMap)
+    {
+        glUniform1f(5, isoIndPair.first);
+        glDrawArrays(GL_TRIANGLES, isoIndPair.second.first, isoIndPair.second.second);
     }
     glfwSwapBuffers(mWindow);
 }

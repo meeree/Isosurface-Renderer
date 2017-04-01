@@ -1,28 +1,36 @@
 #ifndef __MARCHING_CUBES_H__
 #define __MARCHING_CUBES_H__
 
+//#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+//inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
+//{
+//   if (code != cudaSuccess) 
+//   {
+//      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+//      if (abort) exit(code);
+//   }
+//}
+
 #include <cstdint>
 #include <vector>
 #include <fstream>
 #include <glm/glm.hpp>
 
-//Define isolevel uint size 
-typedef uint8_t iso_uint_t;
-typedef std::vector<std::vector<std::vector<iso_uint_t>>> grid_t;
+typedef float iso_type_t;
+
 //Define vec3 type
 typedef glm::vec3 vec3;
 
 struct Grid
 {
-    grid_t mGrid;
     size_t mDim[3];
-    double mSize[3];
-    double mOrigin[3];
+    float mSize[3];
+    float mOrigin[3];
 };
 
 struct Voxel 
 {
-	iso_uint_t mVal;
+	iso_type_t mVal;
 };
 
 struct Vertex 
@@ -31,12 +39,13 @@ struct Vertex
     vec3 mNormal;
 };
 
-void resizeGridData (grid_t&, size_t const (&)[3]);
-bool writeFile (std::string const&, Grid const&, char const*);
-bool readFile (char const*, Grid&);
+void blabla (std::vector<Vertex>&);
 
-vec3 interpolate(Grid const&, unsigned const&, unsigned const&, unsigned const&);
-void polygonise(Grid const&, iso_uint_t const&, std::vector<Vertex>&, std::vector<unsigned>&);
-
+//void resizeGridData (grid_t&, size_t const (&)[3]);
+//bool writeFile (std::string const&, Grid const&, char const*);
+//bool readFile (char const*, Grid&);
+//
+//vec3 interpolate(Grid const&, unsigned const&, unsigned const&, unsigned const&);
+//void WRAPpolygonise (Grid*, float, unsigned, float*, unsigned[3], unsigned[3]);
 
 #endif //MARCHING_CUBES_H
