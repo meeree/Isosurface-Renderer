@@ -29,8 +29,11 @@ private:
     GLuint mColorScheme;
     static GLuint msColorSchemeCount;
 
+    GLfloat mYMin, mYMax;
+
     bool fMustUpdate;
     bool fDrawAxes;
+    bool fMustSetYMinMax;
 
     void setShaders (char const*, char const*);
 
@@ -40,18 +43,22 @@ public:
     Graphics (GLfloat const&, GLfloat const&, char const*, char const*, const char* title="Untitled Window");
 
     void setCam (vec3 const&, vec3 const&);
+    void setYMinMax ();
     void moveCam (vec3 const&);
     void addSurface (iso_type_t const& isolevel, std::vector<Vertex> const& surfaceVerts);
     void scale (GLfloat const&);
+    void scale (glm::vec3 const&);
 
     inline GLFWwindow* const& getWindow () const {return mWindow;};
 
     void mustUpdate ();
+    void mustSetYMinMax ();
     void toggleAxes (GLfloat const& sz=1.0f);
 
     void update ();
     void render (double const&, double const&);
     void loop (double const&, double);
+    void updateTransforms (double const&);
 
     void incColorScheme ();
 	static GLuint loadInShader (char const*, GLenum const&);
@@ -67,7 +74,7 @@ struct Mesh
 
 struct 
 {
-    GLfloat scalar=1.0f;
+    glm::vec3 scalar={1.0f,1.0f,1.0f};
 } GLFWAttrs;
 
 

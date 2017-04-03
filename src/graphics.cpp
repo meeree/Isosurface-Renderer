@@ -68,7 +68,7 @@ void Graphics::setShaders (char const* vertLoc, char const* fragLoc)
 }
 
 Graphics::Graphics (GLfloat const& width_, GLfloat const& height_, char const* vertLoc_, char const* fragLoc_, const char* title_)
-    : mWidth{width_}, mHeight{height_}, mColorScheme{0}, mViewScalar{1.0f}, mModMat{1.0f}, mViewMat{1.0f}, mHoriAngle{3.14}, mVertAngle{0.0}, fMustUpdate{false}, fDrawAxes{false}
+    : mWidth{width_}, mHeight{height_}, mColorScheme{0}, mViewScalar{1.0f}, mModMat{1.0f}, mViewMat{1.0f}, mHoriAngle{3.14}, mVertAngle{0.0}, fMustUpdate{true}, fDrawAxes{false}, fMustSetYMinMax{true}
 {
     if(!glfwInit()) 
     {
@@ -108,7 +108,6 @@ Graphics::Graphics (GLfloat const& width_, GLfloat const& height_, char const* v
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
 
-    update();
     scale(1.0f);
 }
 
@@ -123,8 +122,22 @@ void Graphics::setCam (vec3 const& camPos, vec3 const& camDir)
 {
 	mCamPos = camPos;
     mCamDir = glm::normalize(camDir);
-//	mHoriAngle = acos(dot(vec3(0.0f,0.0f,1.0f), mCamDir));
-//	mVertAngle = acos(dot(vec3(0.0f,1.0f,0.0f), mCamDir));
+	mHoriAngle = acos(dot(vec3(0.0f,0.0f,1.0f), mCamDir));
+	mVertAngle = acos(dot(vec3(0.0f,1.0f,0.0f), mCamDir))-M_PI/2;
+}
+
+void Graphics::setYMinMax ()
+{
+    for (unsigned i = 0; i < mVertices.size(); ++i)
+    {
+        if (fDrawAxes && i == mVertices.size()-6) 
+            break;
+        auto const& height{mVertices[i].mPosition.y};
+        if (height > mYMax)
+            mYMax = height;
+        else if (height < mYMin)
+            mYMin = height;
+    }
 }
 
 void Graphics::moveCam (vec3 const& inc)
@@ -134,11 +147,23 @@ void Graphics::moveCam (vec3 const& inc)
 
 void Graphics::scale (GLfloat const& scalar)
 {
-    glUniform1f(7, scalar);
+    glUniform3f(7, scalar, scalar, scalar);
+}
+
+void Graphics::scale (glm::vec3 const& scalarVec)
+{
+    glUniform3f(7, scalarVec.x, scalarVec.y, scalarVec.z);
 }
 
 void Graphics::update ()
 {
+    if (fMustSetYMinMax)
+    {
+        setYMinMax();
+        glUniform1f(11, mYMax);
+        glUniform1f(12, mYMin);
+        fMustSetYMinMax = false;
+    }
     glUniform1ui(8, mColorScheme);
     fMustUpdate = false;
 }
@@ -161,21 +186,13 @@ void Graphics::toggleAxes (GLfloat const& sz)
     fDrawAxes = !fDrawAxes;
 }
 
-void Graphics::render (double const& t, double const&)
+void Graphics::updateTransforms (double const& t)
 {
-    if (fMustUpdate)
-    {
-        update();
-    }
-    GLfloat const color [4] {0.0f, 0.0f, 0.0f, 1.0f};
-    glClearBufferfv(GL_COLOR, 0.0f, color);
-    glClear(GL_DEPTH_BUFFER_BIT);
-
     double xpos, ypos;
     glfwGetCursorPos(mWindow, &xpos, &ypos);
     glfwSetCursorPos(mWindow, mWidth/2, mHeight/2);
-    mHoriAngle += 6*(glfwGetTime()-t)*(mWidth/2-xpos);
-    mVertAngle += 6*(glfwGetTime()-t)*(mHeight/2-ypos);
+    mHoriAngle += 30*(glfwGetTime()-t)*(mWidth/2-xpos);
+    mVertAngle += 30*(glfwGetTime()-t)*(mHeight/2-ypos);
 
     mCamDir = vec3(
         cos(mVertAngle) * sin(mHoriAngle),
@@ -218,9 +235,19 @@ void Graphics::render (double const& t, double const&)
         moveCam(moveVec);
     }
     mViewMat = glm::lookAt(mCamPos, mCamPos+mCamDir, up); 
+}
+
+void Graphics::render (double const&, double const&)
+{
+    if (fMustUpdate)
+        update();
+    updateTransforms(glfwGetTime());
     glUniformMatrix4fv(3, 1, GL_FALSE, glm::value_ptr(mViewMat));
     glUniform3f(9, mCamPos.x, mCamPos.y, mCamPos.z);
-    
+
+    GLfloat const color [4] {0.0f, 0.0f, 0.0f, 1.0f};
+    glClearBufferfv(GL_COLOR, 0.0f, color);
+    glClear(GL_DEPTH_BUFFER_BIT);
     if (fDrawAxes)
     {
         glUniform1i(10, 1);
@@ -254,4 +281,9 @@ void Graphics::incColorScheme ()
 void Graphics::mustUpdate ()
 {
     fMustUpdate = true;
+}
+
+void Graphics::mustSetYMinMax ()
+{
+    fMustSetYMinMax = true;
 }

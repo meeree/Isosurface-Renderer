@@ -5,14 +5,18 @@ out vec4 color;
 uniform vec3 lightIntensities = vec3(0.5);
 uniform vec3 ambient = vec3(0.3);
 
-layout (location=5) uniform float val;
-layout (location=6) uniform float maxVal;
 layout (location=3) uniform mat4 vMat;
 layout (location=4) uniform mat4 mMat;
+
+layout (location=5) uniform float val;
+layout (location=6) uniform float maxVal;
 
 layout (location=8) uniform uint colorScheme;
 layout (location=9) uniform vec3 camPos;
 layout (location=10) uniform bool lineDraw;
+
+layout (location=11) uniform float yMax;
+layout (location=12) uniform float yMin;
 
 in VS_OUT
 {   vec3 position;
@@ -39,6 +43,7 @@ uniform vec3 pallete [16] = vec3[](
 
 void main(void)
 {
+
     if (lineDraw)
     {
         color = vec4(fs_in.normal,1.0);
@@ -48,11 +53,14 @@ void main(void)
     vec4 col;
     if (colorScheme == 0)
     {
-        col = vec4(0.5+0.5*val/maxVal);
+        col = vec4(0.5+0.5*val/(maxVal+0.001));
     }
     else if (colorScheme == 1)
     {
-        col = vec4(vec3(0.5*val/maxVal,abs(cos(p)),abs(sin(p))), 1.0);
+        float k = (fs_in.position.y-yMin)/(yMax-yMin);
+//        col = mix(vec4(0.2, 0.2, 1.0, 1.0), vec4(vec3(0.5*k), 1.0), abs(k)); 
+        col = k < 0.0 ? vec4(0.2, 0.2, 1.0, 1.0) : vec4(vec3(0.5*k),1.0);
+//        col = vec4(vec3(0.5*val/maxVal,abs(cos(p)),abs(sin(p))), 1.0);
     }
     vec3 l = normalize(mat3(vMat*mMat)*(camPos*fs_in.position));
     float brightness = clamp(abs(dot(mat3(vMat*mMat)*fs_in.normal, l)), 0.0, 1.0);

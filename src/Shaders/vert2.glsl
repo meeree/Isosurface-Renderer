@@ -9,7 +9,7 @@ layout (location=4) uniform mat4 mMat;
 
 layout (location=5) uniform float val;
 layout (location=6) uniform float maxVal;
-layout (location=7) uniform float scalar;
+layout (location=7) uniform vec3 scalarVec;
 
 out VS_OUT
 {   vec3 position;
@@ -18,12 +18,7 @@ out VS_OUT
 
 void main(void)
 {
-    float percent = float(val)/float(maxVal);
-    float k = 16*percent;
-    int kInt = int(floor(k));
-    float p = length(position);
-
-    gl_Position = pMat*vMat*mMat*vec4(scalar*position, 1.0);
-    vs_out.position = scalar*position; 
+    gl_Position = pMat*vMat*mMat*vec4(scalarVec*position, 1.0);
+    vs_out.position = scalarVec*position; 
     vs_out.normal = normal;
 }

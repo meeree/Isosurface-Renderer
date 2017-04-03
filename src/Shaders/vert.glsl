@@ -9,9 +9,12 @@ layout (location=4) uniform mat4 mMat;
 
 layout (location=5) uniform uint val;
 layout (location=6) uniform uint maxVal;
-layout (location=7) uniform float scalar;
+layout (location=7) uniform vec3 scalarVec;
 layout (location=8) uniform uint colorScheme;
 layout (location=9) uniform vec3 camPos;
+
+layout (location=11) uniform float yMax;
+layout (location=12) uniform float yMin;
 
 uniform vec3 lightIntensities = vec3(0.7);
 uniform vec3 ambient = vec3(0.2);
@@ -50,9 +53,9 @@ void main(void)
      //   vs_out.color = vec4(mix(pallete[kInt-1], pallete[kInt], k-kInt), 1.0);
     }
 
-    gl_Position = pMat*vMat*mMat*vec4(scalar*position, 1.0);
+    gl_Position = pMat*vMat*mMat*vec4(scalarVec*position, 1.0);
 
-    vec3 pos = mat3(vMat*mMat)*scalar*position; 
+    vec3 pos = mat3(vMat*mMat)*scalarVec*position; 
     vec3 l = normalize(mat3(vMat*mMat)*camPos-pos);
     float brightness = clamp(dot(mat3(vMat*mMat)*normal, l), 0.0, 1.0);
     vs_out.color = vec4((ambient + brightness*lightIntensities)*vs_out.color.rgb, vs_out.color.a);

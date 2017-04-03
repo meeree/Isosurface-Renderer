@@ -39,8 +39,7 @@ struct Vertex
     vec3 mNormal;
 };
 
-void blabla (std::vector<Vertex>&);
-
+void fillSpace (std::vector<Vertex>&);
 //void resizeGridData (grid_t&, size_t const (&)[3]);
 //bool writeFile (std::string const&, Grid const&, char const*);
 //bool readFile (char const*, Grid&);
