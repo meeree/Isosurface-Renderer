@@ -100,22 +100,39 @@ Graphics::Graphics (GLfloat const& width_, GLfloat const& height_, char const* v
 
     glGenVertexArrays(1, &mVao);
     glGenBuffers(1, &mVbo);
+    glGenBuffers(1, &mLineVbo);
     glBindVertexArray(mVao);
-    glBindBuffer(GL_ARRAY_BUFFER, mVbo);
 
+    glBindBuffer(GL_ARRAY_BUFFER, mLineVbo);
+//    glMapBuffer(GL_ARRAY_BUFFER, mLineVbo);
+//    glMapBuffer(GL_ARRAY_BUFFER, mVbo);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, mPosition)));
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, mNormal)));
+    glBufferData(GL_ARRAY_BUFFER, 0, NULL, GL_DYNAMIC_DRAW);
+
+    glBindBuffer(GL_ARRAY_BUFFER, mVbo);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, mPosition)));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, mNormal)));
+    glBufferData(GL_ARRAY_BUFFER, 0, NULL, GL_DYNAMIC_DRAW);
+
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
-
     scale(1.0f);
 }
 
 void Graphics::addSurface (iso_type_t const& isolevel, std::vector<Vertex> const& surfaceVerts)
 {
+    glBindBuffer(GL_ARRAY_BUFFER, mVbo);
     mSurfaceIndexMap.push_back({isolevel, {mVertices.size(), surfaceVerts.size()}});
     mVertices.insert(mVertices.end(), surfaceVerts.begin(), surfaceVerts.end());
     glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex)*mVertices.size(), mVertices.data(), GL_DYNAMIC_DRAW);
+}
+
+void Graphics::addLines (std::vector<Vertex> const& lineVerts)
+{
+    glBindBuffer(GL_ARRAY_BUFFER, mLineVbo);
+    mLineVertices.insert(mLineVertices.end(), lineVerts.begin(), lineVerts.end());
+    glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex)*mLineVertices.size(), mLineVertices.data(), GL_DYNAMIC_DRAW);
 }
 
 void Graphics::setCam (vec3 const& camPos, vec3 const& camDir)
@@ -130,8 +147,6 @@ void Graphics::setYMinMax ()
 {
     for (unsigned i = 0; i < mVertices.size(); ++i)
     {
-        if (fDrawAxes && i == mVertices.size()-6) 
-            break;
         auto const& height{mVertices[i].mPosition.y};
         if (height > mYMax)
             mYMax = height;
@@ -173,13 +188,14 @@ void Graphics::toggleAxes (GLfloat const& sz)
 {
     if (!fDrawAxes)
     {
-        mVertices.push_back({{0,0,0},{1,0,0}});
-        mVertices.push_back({{sz,0,0},{1,0,0}});
-        mVertices.push_back({{0,0,0},{0,1,0}});
-        mVertices.push_back({{0,sz,0},{0,1,0}});
-        mVertices.push_back({{0,0,0},{0,0,1}});
-        mVertices.push_back({{0,0,sz},{0,0,1}});
-        glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex)*mVertices.size(), mVertices.data(), GL_DYNAMIC_DRAW);
+        std::vector<Vertex> axes{
+            {{0,0,0},{1,0,0}},
+            {{sz,0,0},{1,0,0}},
+            {{0,0,0},{0,1,0}},
+            {{0,sz,0},{0,1,0}},
+            {{0,0,0},{0,0,1}},
+            {{0,0,sz},{0,0,1}}};
+        addLines(axes);
     }
     else
         mVertices.erase(mVertices.end()-6, mVertices.end());
@@ -191,8 +207,8 @@ void Graphics::updateTransforms (double const& t)
     double xpos, ypos;
     glfwGetCursorPos(mWindow, &xpos, &ypos);
     glfwSetCursorPos(mWindow, mWidth/2, mHeight/2);
-    mHoriAngle += 30*(glfwGetTime()-t)*(mWidth/2-xpos);
-    mVertAngle += 30*(glfwGetTime()-t)*(mHeight/2-ypos);
+    mHoriAngle += 100*(glfwGetTime()-t)*(mWidth/2-xpos);
+    mVertAngle += 100*(glfwGetTime()-t)*(mHeight/2-ypos);
 
     mCamDir = vec3(
         cos(mVertAngle) * sin(mHoriAngle),
@@ -248,12 +264,13 @@ void Graphics::render (double const&, double const&)
     GLfloat const color [4] {0.0f, 0.0f, 0.0f, 1.0f};
     glClearBufferfv(GL_COLOR, 0.0f, color);
     glClear(GL_DEPTH_BUFFER_BIT);
-    if (fDrawAxes)
-    {
-        glUniform1i(10, 1);
-        glDrawArrays(GL_LINES, mVertices.size()-6, 6);
-        glUniform1i(10, 0);
-    }
+
+    glBindBuffer(GL_ARRAY_BUFFER, mLineVbo);
+    glUniform1i(10, 1);
+    glDrawArrays(GL_LINES, 0, mLineVertices.size());
+    glUniform1i(10, 0);
+
+    glBindBuffer(GL_ARRAY_BUFFER, mVbo);
     for (auto const& isoIndPair: mSurfaceIndexMap)
     {
         glUniform1f(5, isoIndPair.first);

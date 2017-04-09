@@ -1,7 +1,9 @@
+#include "../Simplex.h"
+#include <glm/gtc/matrix_transform.hpp>
+
 #include <vector>
 #include <cstdint>
 #include "marching_cubes.h"
-#include <glm/gtc/noise.hpp>
 
 inline __host__ __device__ float3 operator+(float3 a, float3 b) {
   return make_float3(a.x + b.x, a.y + b.y, a.z + b.z);
@@ -307,23 +309,44 @@ __device__ inline float3 vertexInterp (float isolevel, float3 p1, float3 p2, flo
 	return p1 + (isolevel-valp1)*(p2-p1)/(valp2-valp1);
 }
 
+__device__ float sampleNoise (float3 p)
+{
+    return Simplex::noise(glm::vec3(p.x,p.y,p.z));
+}
+
+#define OCT_CNT 5
+static __device__ float frequencies []
+{
+    1.0f, 0.5f, 0.1f, 0.13f, 2.0f
+};
+
+static __device__ float amplitudes []
+{
+    0.15f, 0.35f, 2.0f, -1.0f, 0.05f
+};
+
 __device__ float sample (float3 p)
 {
-    float density{
-        -p.y
-        +glm::perlin(glm::vec3(p.x,p.y,p.z)*4.03f)*0.25f
-        +glm::perlin(glm::vec3(p.x,p.y,p.z)*1.96f)*0.50f
-        +glm::perlin(glm::vec3(p.x,p.y,p.z)*2.01f)*1.00f};
+    glm::vec3 pVec{p.x,p.y,p.z};
+    float rad = 7.5f;
+    glm::vec3 offset{pVec - glm::vec3(0.0f,-rad,0.0f)};
+    float density = rad-glm::length(offset);
+    for (int i = 0; i < OCT_CNT; ++i)
+    {
+        density += sampleNoise(p*frequencies[i])*amplitudes[i];
+    }
+//    density -= glm::clamp((0.5f-p.y)*3.0f, 0.0f, 1.0f)*40;
+//    density += glm::clamp((-1.0f-p.y+0.1f*cos(5.0f*(cos(p.x)-p.z))-sampleNoise(p*0.4f)*0.5f)*2.0f, 0.0f, 1.0f)*40;
+//    density -= glm::clamp((1.0f-p.y)*3.0f, 0.0f, 1.0f)*40;
     return density;
 }
 
 __global__ void polygonise(Grid* grid, float isolevel, unsigned zIndex, float3* vertices)
 {
-//    extern __shared__ float3 vertices[];
 	unsigned gridIndex[3]{
 		blockIdx.x*blockDim.x + threadIdx.x,
 		blockIdx.y*blockDim.y + threadIdx.y,
-        /*blockIdx.z*blockDim.z + threadIdx.z*/zIndex};
+        zIndex};
 
     if (gridIndex[0] > (*grid).mDim[0] || gridIndex[1] > (*grid).mDim[1] || gridIndex[2] > (*grid).mDim[2])
         return;
@@ -398,90 +421,42 @@ __global__ void polygonise(Grid* grid, float isolevel, unsigned zIndex, float3* 
 	}
 }
 
-//void fillSpace (std::vector<Vertex>& glVertices)
-//{
-//    float3* vertices;
-//    float3* d_vertices;
-//    Grid* d_grid;
-//    
-//    vertices = (float3*)malloc(15*8*8*8*sizeof(float3));
-//    cudaMalloc(&d_vertices, 15*8*8*8*sizeof(float3));
-//    /*gpuErrchk(*/cudaMalloc(&d_grid, sizeof(Grid));
-//
-//    unsigned sz = 20;
-//    for (unsigned k = 0; k < sz; ++k)
-//    {
-//        for (unsigned j = 0; j < sz; ++j)
-//        {
-//            for (unsigned i = 0; i < sz; ++i)
-//            {
-//                Grid grid{{8, 8, 8}, {1.0f, 1.0f, 1.0f}, {-2.0f+((float)i/sz)*4.0f, -1.0f+((float)j/sz)*2.0f, -1.0f+((float)k/sz)*2.0f}};
-//                /*gpuErrchk(*/cudaMemcpy(d_grid, &grid, sizeof(Grid), cudaMemcpyHostToDevice);
-//
-//                dim3 blockCnt{1, 1, 1};
-//                dim3 threadsPerBlock{8, 8, 8};
-//                polygonise<<<blockCnt, threadsPerBlock>>>(d_grid, 0.0, 0, d_vertices);
-//                cudaDeviceSynchronize();
-//                cudaMemcpy(vertices, d_vertices, 15*8*8*8*sizeof(float3), cudaMemcpyDeviceToHost);
-//                for (int i = 0; i < 15*8*8*8; ++i)
-//                {
-//                    auto const& vert = vertices[i];
-//                    if (!std::isnan(vert.x))
-//                        glVertices.push_back({{vert.x, vert.y, vert.z}, {0,0,0}});
-//                }
-//            }
-//        }
-//    }
-//
-//    free(vertices);
-//    cudaFree(d_vertices);
-//    cudaFree(d_grid);
-//}
-
 void fillSpace (std::vector<Vertex>& glVertices)
 {
-    float3* vertices;
+    float3 vertices[15*16*16];
     float3* d_vertices;
     Grid* d_grid;
     
-    vertices = (float3*)malloc(15*16*16*sizeof(float3));
+//    vertices = (float3*)malloc(15*16*16*sizeof(float3));
+    cudaMalloc(&d_grid, sizeof(Grid));
     cudaMalloc(&d_vertices, 15*16*16*sizeof(float3));
-    /*gpuErrchk(*/cudaMalloc(&d_grid, sizeof(Grid));
     dim3 blockCnt{1, 1, 1};
     dim3 threadsPerBlock{16, 16, 1};
 
-    unsigned sz = 20;
+    unsigned sz = 30;
     for (unsigned k = 0; k < sz; ++k)
     {
-        for (unsigned j = 0; j < sz; ++j)
+        for (unsigned j = 0; j < 30; ++j)
         {
             for (unsigned i = 0; i < sz; ++i)
             {
-                Grid grid{{16, 16, 16}, {1.0f, 1.0f, 1.0f}, {-10.0f+((float)i/sz)*20.0f, -10.0f+((float)j/sz)*20.0f, -10.0f+((float)k/sz)*20.0f}};
-                /*gpuErrchk(*/cudaMemcpy(d_grid, &grid, sizeof(Grid), cudaMemcpyHostToDevice);
+                Grid grid{{16, 16, 16}, {1.0f, 1.0f, 1.0f}, {-(float)sz/2+(float)i, -15.0f+(float)j, -(float)sz/2+(float)k}};
+                cudaMemcpy(d_grid, &grid, sizeof(Grid), cudaMemcpyHostToDevice);
     
                 for (unsigned slice = 0; slice < 16; ++slice)
                 {
                     polygonise<<<blockCnt, threadsPerBlock>>>(d_grid, 0.0, slice, d_vertices);
                     cudaMemcpy(vertices, d_vertices, 15*16*16*sizeof(float3), cudaMemcpyDeviceToHost);
-                    for (unsigned v = 0; v < 15*16*16; ++v)
+                    for (auto const& vert: vertices)
                     {
-                        auto const& vert = vertices[v];
                         if (!std::isnan(vert.x))
-                        {
-                    //        glm::vec3 grad;
-                    //        grad.x = sample(vert+make_float3(0.01f,0,0))-sample(vert+make_float3(-0.01f,0,0));
-                    //        grad.y = sample(vert+make_float3(0,0.01f,0))-sample(vert+make_float3(0,-0.01f,0));
-                    //        grad.z = sample(vert+make_float3(0,0,0.01f))-sample(vert+make_float3(0,0,-0.01f));
                             glVertices.push_back({{vert.x, vert.y, vert.z},{0,0,0}});
-                        }
                     }
                 }
             }
         }
     }
 
-    free(vertices);
     cudaFree(d_vertices);
     cudaFree(d_grid);
 }

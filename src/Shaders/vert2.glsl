@@ -11,6 +11,9 @@ layout (location=5) uniform float val;
 layout (location=6) uniform float maxVal;
 layout (location=7) uniform vec3 scalarVec;
 
+layout (location=11) uniform float yMax;
+layout (location=12) uniform float yMin;
+
 out VS_OUT
 {   vec3 position;
     vec3 normal;
@@ -18,7 +21,8 @@ out VS_OUT
 
 void main(void)
 {
-    gl_Position = pMat*vMat*mMat*vec4(scalarVec*position, 1.0);
     vs_out.position = scalarVec*position; 
+
+    gl_Position = pMat*vMat*mMat*vec4(vs_out.position, 1.0);
     vs_out.normal = normal;
 }

@@ -16,9 +16,9 @@
 class Graphics 
 {
 private:
-    std::vector<Vertex> mVertices;
+    std::vector<Vertex> mVertices, mLineVertices;
     std::vector<std::pair<iso_type_t, std::pair<size_t, size_t>>> mSurfaceIndexMap;
-	GLuint mVbo, mVao;
+	GLuint mVbo, mLineVbo, mVao;
     GLfloat mWidth, mHeight;
     GLuint mShaderProgram;
     glm::mat3 mPmat, mVmat, mMmat;
@@ -46,6 +46,7 @@ public:
     void setYMinMax ();
     void moveCam (vec3 const&);
     void addSurface (iso_type_t const& isolevel, std::vector<Vertex> const& surfaceVerts);
+    void addLines (std::vector<Vertex> const& lineVerts);
     void scale (GLfloat const&);
     void scale (glm::vec3 const&);
 

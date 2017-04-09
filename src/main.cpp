@@ -29,12 +29,36 @@ void constructNormals (std::vector<Vertex>& vertices)
     vertices.erase(std::remove_if(vertices.begin(), vertices.end(), [](Vertex const& v){return std::isnan(v.mPosition.x);}), vertices.end()); 
 }
 
+float sampleHOST (glm::vec3 const& p)
+{
+    float density{
+        -p.y
+        +glm::perlin(glm::vec3(p.x,p.y,p.z)*6.96f)*0.15f
+        +glm::simplex(glm::vec3(p.x,p.y,p.z)*9.91f)*0.10f
+        +glm::perlin(glm::vec3(p.x,p.y,p.z)*0.91f)*3.00f};
+    density -= glm::clamp((p.y-1.0)*3, 0.0, 1.0)*40;
+    return density;
+}
+
+void gradientNormals (std::vector<Vertex>& vertices)
+{
+    for (auto& v: vertices)
+    {
+        auto& vert = v.mPosition;
+        glm::vec3 grad;
+        grad.x = sampleHOST(vert+glm::vec3(0.01f,0,0))-sampleHOST(vert+glm::vec3(-0.01f,0,0));
+        grad.y = sampleHOST(vert+glm::vec3(0,0.01f,0))-sampleHOST(vert+glm::vec3(0,-0.01f,0));
+        grad.z = sampleHOST(vert+glm::vec3(0,0,0.01f))-sampleHOST(vert+glm::vec3(0,0,-0.01f));
+        v.mNormal = glm::normalize(grad);
+    }
+}
+
 void mouseButtonCallback (GLFWwindow*, int, int, int)
 {
 
 }
 
-Graphics g{1920, 1080, "/home/jhazelden/Cpp/volumeRendererCU/src/Shaders/vert2.glsl", "/home/jhazelden/Cpp/volumeRendererCU/src/Shaders/frag2.glsl", "Volume renderer v0.1"};
+Graphics g{1920, 1080, "/home/jhazelden/Cpp/OpenGL/volumeRendererCU/src/Shaders/vert2.glsl", "/home/jhazelden/Cpp/OpenGL/volumeRendererCU/src/Shaders/frag2.glsl", "Volume renderer v0.1"};
 
 void keyCallback(GLFWwindow*, int key, int, int action, int)
 {   
@@ -85,6 +109,7 @@ int main ()
     std::vector<Vertex> glVertices{};
     fillSpace(glVertices);
     constructNormals(glVertices);
+//    gradientNormals(glVertices);
     g.addSurface(0, glVertices);
 
     g.mustUpdate();

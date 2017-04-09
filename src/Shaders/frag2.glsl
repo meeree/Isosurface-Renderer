@@ -10,7 +10,7 @@ layout (location=4) uniform mat4 mMat;
 
 layout (location=5) uniform float val;
 layout (location=6) uniform float maxVal;
-
+layout (location=7) uniform vec3 scalarVec;
 layout (location=8) uniform uint colorScheme;
 layout (location=9) uniform vec3 camPos;
 layout (location=10) uniform bool lineDraw;
@@ -53,14 +53,13 @@ void main(void)
     vec4 col;
     if (colorScheme == 0)
     {
-        col = vec4(0.5+0.5*val/(maxVal+0.001));
+        col = vec4(1.0);
     }
     else if (colorScheme == 1)
     {
-        float k = (fs_in.position.y-yMin)/(yMax-yMin);
-//        col = mix(vec4(0.2, 0.2, 1.0, 1.0), vec4(vec3(0.5*k), 1.0), abs(k)); 
-        col = k < 0.0 ? vec4(0.2, 0.2, 1.0, 1.0) : vec4(vec3(0.5*k),1.0);
-//        col = vec4(vec3(0.5*val/maxVal,abs(cos(p)),abs(sin(p))), 1.0);
+        float k = (fs_in.position.y-scalarVec.y*yMin)/(scalarVec.y*yMax-scalarVec.y*yMin);
+        col = fs_in.position.y-scalarVec.y*0.1 <= scalarVec.y*yMin ? vec4(0.2, 0.2, 1.0, 1.0) : mix(mix(vec4(0.5451, 0.5137, 0.4706, 1.0), vec4(0.5176, 0.3294, 0.1255, 1.0), 2*min(k, 0.5)), vec4(0.3804, 0.8118, 0.0941, 1.0), 2*(max(k, 0.5)-0.5));
+//        col = fs_in.position.y-scalarVec.y*0.1 <= scalarVec.y*yMin ? vec4(0.2, 0.2, 1.0, 1.0) : mix(mix(vec4(0.4941, 0.0471, 0.5530, 1.0), vec4(0.9490, 0.3412, 0.6745, 1.0), 2*min(k, 0.5)), vec4(0.3804, 0.8118, 0.0941, 1.0), 2*(max(k, 0.5)-0.5));
     }
     vec3 l = normalize(mat3(vMat*mMat)*(camPos*fs_in.position));
     float brightness = clamp(abs(dot(mat3(vMat*mMat)*fs_in.normal, l)), 0.0, 1.0);
