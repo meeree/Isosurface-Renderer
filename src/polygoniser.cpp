@@ -1,106 +1,355 @@
-//Uses code based on code from 
-//http://paulbourke.net/geometry/polygonise/
-
-#include "marching_cubes.h"
-#include <limits>
+#include "polygoniser.h"
+#include <armadillo>
+#include <cstdio>
 #include <iostream>
-#include <algorithm>
-#include <unordered_map>
 #include <map>
+#include <glm/ext.hpp>
+#include <algorithm>
 
-void resizeGridData (grid_t& gridData, size_t const (&dim)[3])
+#include "density_sampler.h"
+
+void Polygoniser::polygonise (Grid const& grid, float const& isolevel, std::vector<Vertex>& vertices, std::vector<unsigned>&, DensitySampler const& sampler)
 {
-    gridData.resize(dim[0]);
-    for (auto& slab: gridData)
-    {
-        slab.resize(dim[1]);
-        for (auto& line: slab)
-        {
-            line.resize(dim[2]);
-        }
-    }
+    polygonise(grid, isolevel, vertices, sampler);
+    /*OCTREE(indices, vertices)*/
+    std::cerr<<"Err: Polygoniser::polygonise with indices is not fully defined yet."<<std::endl;
+    exit(EXIT_SUCCESS);
 }
 
-template <class It>
-std::string join (It begin, It const& end, std::string const& divStr="")
+glm::vec3 interpolate(Grid const& grid, unsigned const& i, unsigned const& j, unsigned const& k)
 {
-    std::string output{""};
-    while (begin != end)
-    {
-        output.append(std::to_string(*begin++)+divStr);
-    }
-    return output;
+    return {
+        grid.mOrigin[0]+(double)i/grid.mDim[0]*grid.mSize[0],
+        grid.mOrigin[1]+(double)j/grid.mDim[1]*grid.mSize[1],
+        grid.mOrigin[2]+(double)k/grid.mDim[2]*grid.mSize[2]};
 }
 
-//Note: error conditions need to be added
-bool writeFile (std::string const& comment, Grid const& grid, char const* flName)
+glm::vec3 vertexInterp(float const& isolevel, glm::vec3 const& p1, glm::vec3 const& p2, float const& valp1, float const& valp2)
 {
-    std::ofstream fl;
-    fl.open(flName, std::ofstream::out | std::ofstream::trunc | std::ofstream::binary);
-    std::string header{
-        comment+"\n"
-        +join(grid.mDim, grid.mDim+3, " ")+"\n"
-        +join(grid.mSize, grid.mSize+3, " ")+"\n"
-        +join(grid.mOrigin, grid.mOrigin+3, " ")+"\n"
-        +std::to_string(sizeof(iso_uint_t))+"\n"};
-    for (size_t i = 0; i < grid.mDim[0]; ++i)
+	if (isolevel == valp1)
+		return(p1);
+	if (isolevel == valp2)
+		return(p2);
+	if (valp1 == valp2)
+		return(p1);
+	double mu = (isolevel - valp1) / (valp2 - valp1);
+	return {p1.x + mu * (p2.x - p1.x),
+            p1.y + mu * (p2.y - p1.y), 
+            p1.z + mu * (p2.z - p1.z)};
+}
+
+void MarchingCubes::polygonise (Grid const& grid, float const& isolevel, std::vector<Vertex>& vertices, DensitySampler const& sampler)
+{
+    for (unsigned k = 0; k < grid.mDim[2]-1; ++k)
     {
-        for (size_t j = 0; j < grid.mDim[1]; ++j)
+        for (unsigned j = 0; j < grid.mDim[1]-1; ++j)
         {
-            for (size_t k = 0; k < grid.mDim[2]; ++k)
+            for (unsigned i = 0; i < grid.mDim[0]-1; ++i)
             {
-                fl.put(grid.mGrid[i][j][k]);
-            }
-        }
-    }
+				glm::vec3 positions[8]{
+                    interpolate(grid, i, j, k+1),
+                    interpolate(grid, i+1, j, k+1),
+                    interpolate(grid, i+1, j, k),
+                    interpolate(grid, i, j, k),
+                    interpolate(grid, i, j+1, k+1),
+                    interpolate(grid, i+1, j+1, k+1),
+                    interpolate(grid, i+1, j+1, k),
+                    interpolate(grid, i, j+1, k)
+                };
+                float values[8]{
+					sampler.sample(positions[0]),
+					sampler.sample(positions[1]),
+					sampler.sample(positions[2]),
+					sampler.sample(positions[3]),
+					sampler.sample(positions[4]),
+					sampler.sample(positions[5]),
+					sampler.sample(positions[6]),
+					sampler.sample(positions[7])
+                };
+				glm::vec3 vertList[12];
 
-    fl.close();
-    return true;
+                uint8_t cubeindex = 0;
+                if (values[0] < isolevel)
+                     cubeindex |= 1;
+                if (values[1] < isolevel)
+                     cubeindex |= 2;
+                if (values[2] < isolevel)
+                     cubeindex |= 4;
+                if (values[3] < isolevel)
+                     cubeindex |= 8;
+                if (values[4] < isolevel)
+                     cubeindex |= 16;
+                if (values[5] < isolevel)
+                     cubeindex |= 32;
+                if (values[6] < isolevel)
+                     cubeindex |= 64;
+                if (values[7] < isolevel)
+                     cubeindex |= 128;
+
+                if (msEdgeTable[cubeindex] == 0)
+                    continue;
+
+                if (msEdgeTable[cubeindex] & 1)
+                    vertList[0] = vertexInterp(isolevel,positions[0],positions[1],values[0],values[1]);
+                if (msEdgeTable[cubeindex] & 2)
+                    vertList[1] = vertexInterp(isolevel,positions[1],positions[2],values[1],values[2]);
+                if (msEdgeTable[cubeindex] & 4)
+                    vertList[2] = vertexInterp(isolevel,positions[2],positions[3],values[2],values[3]);
+                if (msEdgeTable[cubeindex] & 8)
+                    vertList[3] = vertexInterp(isolevel,positions[3],positions[0],values[3],values[0]);
+                if (msEdgeTable[cubeindex] & 16)
+                    vertList[4] = vertexInterp(isolevel,positions[4],positions[5],values[4],values[5]);
+                if (msEdgeTable[cubeindex] & 32)
+                    vertList[5] = vertexInterp(isolevel,positions[5],positions[6],values[5],values[6]);
+                if (msEdgeTable[cubeindex] & 64)
+                    vertList[6] = vertexInterp(isolevel,positions[6],positions[7],values[6],values[7]);
+                if (msEdgeTable[cubeindex] & 128)
+                    vertList[7] = vertexInterp(isolevel,positions[7],positions[4],values[7],values[4]);
+                if (msEdgeTable[cubeindex] & 256)
+                    vertList[8] = vertexInterp(isolevel,positions[0],positions[4],values[0],values[4]);
+                if (msEdgeTable[cubeindex] & 512)
+                    vertList[9] = vertexInterp(isolevel,positions[1],positions[5],values[1],values[5]);
+                if (msEdgeTable[cubeindex] & 1024)
+                    vertList[10] = vertexInterp(isolevel,positions[2],positions[6],values[2],values[6]);
+                if (msEdgeTable[cubeindex] & 2048)
+                    vertList[11] = vertexInterp(isolevel,positions[3],positions[7],values[3],values[7]);
+
+                for (unsigned ind = 0; msTriTable[cubeindex][ind] != -1; ind += 3) 
+                {
+					//NOTE: We could use gradient normals here 
+					vertices.push_back({vertList[msTriTable[cubeindex][ind]],
+										 {0,0,0}});
+					vertices.push_back({vertList[msTriTable[cubeindex][ind+1]],
+										 {0,0,0}});
+					vertices.push_back({vertList[msTriTable[cubeindex][ind+2]],
+										 {0,0,0}});
+				}
+			}
+		}
+	}
 }
 
-bool readFile (char const* flName, Grid& grid)
+void MarchingCubes::polygonise (Grid const&, float const&, std::vector<Vertex>&, std::vector<unsigned>&, DensitySampler const&)
 {
-    std::ifstream fl;
-    fl.open(flName, std::ifstream::in | std::ifstream::binary);
-    fl.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-    fl>>grid.mDim[0]; fl>>grid.mDim[1]; fl>>grid.mDim[2]; fl.ignore();
-    fl>>grid.mSize[0]; fl>>grid.mSize[1]; fl>>grid.mSize[2]; fl.ignore();
-    fl>>grid.mOrigin[0]; fl>>grid.mOrigin[1]; fl>>grid.mOrigin[2]; fl.ignore();
-    // Note: I should check the data type here
-    fl.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-
-    resizeGridData(grid.mGrid, grid.mDim);
-    iso_uint_t gridData [grid.mDim[0]*grid.mDim[1]];
-//    for (unsigned i = 0; i < grid.mDim[0]; ++i)
-//    {
-//        for (unsigned j = 0; j < grid.mDim[1]; ++j)
-//        {
-//            fl.read((char*)grid.mGrid[i][j].data(), grid.mDim[2]);
-//            for (unsigned i = 0; i < grid.mDim[0]; ++i)
-//            {
-//                fl.get(c);
-//                grid.mGrid[i][j][k] = c;
-//            }
-//        }
-//    }
-
-    for (unsigned k = 0; k < grid.mDim[2]; ++k)
-    {
-        fl.read((char*)gridData, grid.mDim[0]*grid.mDim[1]);
-        for (unsigned j = 0; j < grid.mDim[1]; ++j)
-        {
-            for (unsigned i = 0; i < grid.mDim[0]; ++i)
-            {
-                grid.mGrid[i][j][k] = gridData[i+j*grid.mDim[0]];
-            }
-        }
-    }
-    fl.close();
-    return true;
+    std::cerr<<"Err: MarchingCubes::polygonise with indices is not fully defined yet."<<std::endl;
+    exit(EXIT_SUCCESS);
 }
 
+void cramerSolve3 (glm::mat3x3 const& A, glm::vec3& x, glm::vec3 const& b)
+{
+    float dets[4]{
+        glm::determinant(A),
+        b[0]*(A[1][1]*A[2][2]-A[1][2]*A[2][1])-A[0][1]*(b[1]*A[2][2]-A[1][2]*b[2])+A[0][2]*(b[1]*A[2][1]-A[1][1]*b[2]),
+        A[0][0]*(b[1]*A[2][2]-A[1][2]*b[2])-b[0]*(A[1][0]*A[2][2]-A[1][2]*A[2][0])+A[0][2]*(A[1][0]*b[2]-b[1]*A[2][0]),
+        A[0][0]*(A[1][1]*b[2]-b[1]*A[2][1])-A[0][1]*(A[1][0]*b[2]-b[1]*A[2][0])+b[0]*(A[1][0]*A[2][1]-A[1][1]*A[2][0])
+    };
+    for (unsigned i = 0; i < 3; ++i)
+    {
+        x[i] = dets[1+i]/dets[0]; 
+    }
+}
 
-static uint16_t edgeTable[256]{
+std::pair<size_t,uint8_t> calulateEdgeLookup (Grid const& grid, unsigned const& i, unsigned const& j, unsigned const& k, uint8_t const& edge)
+{
+    switch (edge)
+    {
+        case 0:
+            return std::make_pair(i+j*grid.mDim[0]+(k+1)*grid.mDim[0]*grid.mDim[1],2);
+        case 1:
+            return std::make_pair(i+1+j*grid.mDim[0]+k*grid.mDim[0]*grid.mDim[1],0);
+        case 2:
+            return std::make_pair(i+j*grid.mDim[0]+k*grid.mDim[0]*grid.mDim[1],2);
+        case 3:
+            return std::make_pair(i+j*grid.mDim[0]+k*grid.mDim[0]*grid.mDim[1],0);
+        case 4:
+            return std::make_pair(i+(j+1)*grid.mDim[0]+(k+1)*grid.mDim[0]*grid.mDim[1],2);
+        case 5:
+            return std::make_pair(i+1+(j+1)*grid.mDim[0]+k*grid.mDim[0]*grid.mDim[1],0);
+        case 6:
+            return std::make_pair(i+(j+1)*grid.mDim[0]+k*grid.mDim[0]*grid.mDim[1],2);
+        case 7:
+            return std::make_pair(i+(j+1)*grid.mDim[0]+k*grid.mDim[0]*grid.mDim[1],0);
+        case 8:
+            return std::make_pair(i+j*grid.mDim[0]+(k+1)*grid.mDim[0]*grid.mDim[1],1);
+        case 9:
+            return std::make_pair(i+1+j*grid.mDim[0]+(k+1)*grid.mDim[0]*grid.mDim[1],1);
+        case 10:
+            return std::make_pair(i+1+j*grid.mDim[0]+k*grid.mDim[0]*grid.mDim[1],1);
+        case 11:
+            return std::make_pair(i+j*grid.mDim[0]+k*grid.mDim[0]*grid.mDim[1],1);
+    }
+    return {};
+}
+
+float QEF (glm::vec3 const& x, glm::mat3x3 const& At_A, glm::vec3 const& At_b, float const& bt_b)
+{
+    return glm::dot(x,At_A*x-2.0f*At_b+bt_b);
+}
+
+void DualContour::polygonise (Grid const& grid, float const& isolevel, std::vector<Vertex>& vertices, DensitySampler const& sampler)
+{
+//    std::map<std::tuple<unsigned, unsigned, unsigned, uint8_t>, std::vector<glm::vec3>> edgeMap;
+    std::map<std::pair<size_t,uint8_t>, std::vector<glm::vec3>> edgeMap;
+    for (unsigned k = 0; k < grid.mDim[2]-1; ++k)
+    {
+        for (unsigned j = 0; j < grid.mDim[1]-1; ++j)
+        {
+            for (unsigned i = 0; i < grid.mDim[0]-1; ++i)
+            {
+				glm::vec3 positions[8]{
+                    interpolate(grid, i, j, k+1),
+                    interpolate(grid, i+1, j, k+1),
+                    interpolate(grid, i+1, j, k),
+                    interpolate(grid, i, j, k),
+                    interpolate(grid, i, j+1, k+1),
+                    interpolate(grid, i+1, j+1, k+1),
+                    interpolate(grid, i+1, j+1, k),
+                    interpolate(grid, i, j+1, k)
+                };
+                float values[8]{
+					sampler.sample(positions[0]),
+					sampler.sample(positions[1]),
+					sampler.sample(positions[2]),
+					sampler.sample(positions[3]),
+					sampler.sample(positions[4]),
+					sampler.sample(positions[5]),
+					sampler.sample(positions[6]),
+					sampler.sample(positions[7])
+                };
+				std::vector<std::pair<glm::vec3, glm::vec3>> hermiteList;
+
+                uint8_t cubeindex = 0;
+                if (values[0] < isolevel)
+                     cubeindex |= 1;
+                if (values[1] < isolevel)
+                     cubeindex |= 2;
+                if (values[2] < isolevel)
+                     cubeindex |= 4;
+                if (values[3] < isolevel)
+                     cubeindex |= 8;
+                if (values[4] < isolevel)
+                     cubeindex |= 16;
+                if (values[5] < isolevel)
+                     cubeindex |= 32;
+                if (values[6] < isolevel)
+                     cubeindex |= 64;
+                if (values[7] < isolevel)
+                     cubeindex |= 128;
+
+                if (msEdgeTable[cubeindex] == 0)
+                    continue;
+
+                std::vector<uint8_t> unequalEdges;
+                for (uint8_t edgeInd = 0; edgeInd < 12; ++edgeInd)
+                {
+                    if (msEdgeTable[cubeindex] & (uint16_t)pow(2, edgeInd))
+                    {
+                        unequalEdges.push_back(edgeInd);
+                        uint8_t ind1{msEdgeToVertTable[edgeInd].first};
+                        uint8_t ind2{msEdgeToVertTable[edgeInd].second};
+                        hermiteList.push_back({vertexInterp(isolevel,positions[ind1],positions[ind2],values[ind1],values[ind2]),
+                                              {0,0,0}});
+                    }
+                }
+                    
+                glm::vec3 avg{0};
+                for (auto& hermPair: hermiteList)
+                {
+                    //NOTE: We can refine the 0.01 here to make it relative to the size of the grid: this will be needed for octrees especially
+                    hermPair.second = {
+                        sampler.sample(hermPair.first+glm::vec3(0.001f,0.0f,0.0f))-sampler.sample(hermPair.first-glm::vec3(0.001f,0.0f,0.0f)),
+                        sampler.sample(hermPair.first+glm::vec3(0.0f,0.001f,0.0f))-sampler.sample(hermPair.first-glm::vec3(0.0f,0.001f,0.0f)),
+                        sampler.sample(hermPair.first+glm::vec3(0.0f,0.0f,0.001f))-sampler.sample(hermPair.first-glm::vec3(0.0f,0.0f,0.001f))};
+//                    hermPair.second = glm::normalize(hermPair.second);
+                    avg += hermPair.first; 
+                }                 
+                avg /= hermiteList.size();
+
+                float sums[10];
+                for (unsigned ind = 0; ind < hermiteList.size(); ++ind)
+                {
+                    glm::vec3 const& n_i{hermiteList[ind].second};
+                    sums[0] += pow(n_i.x,2);
+                    sums[1] += pow(n_i.y,2);
+                    sums[2] += pow(n_i.z,2);
+                    sums[3] += n_i.x*n_i.y;
+                    sums[4] += n_i.x*n_i.z;
+                    sums[5] += n_i.y*n_i.z;
+                    float d{glm::dot(n_i, hermiteList[ind].first-avg)};
+                    sums[6] += d*n_i.x;
+                    sums[7] += d*n_i.y;
+                    sums[8] += d*n_i.z;
+                    sums[9] += d*d;
+                }
+                arma::mat33 At_A{
+                    sums[0], sums[3], sums[4],
+                    sums[3], sums[1], sums[5],
+                    sums[4], sums[5], sums[2]};
+                arma::mat33 inv{pinv(At_A)};
+                glm::mat3x3 glmInv{
+                    inv.at(0,0), inv.at(1,0), inv.at(2,0),
+                    inv.at(0,1), inv.at(1,1), inv.at(2,1),
+                    inv.at(0,2), inv.at(1,2), inv.at(2,2)};
+                glm::vec3 At_b{sums[6], sums[7], sums[8]};
+                float bt_b{sums[9]};
+                glm::vec3 x{glmInv*At_b};
+                x += avg;
+
+//                //NOTE: This solution should be refined in the case when the solution falls outside of the current box
+//                glm::vec3 x;
+//                cramerSolve3(At_A, x, At_b);
+                
+                if (i == 49 && j == 49 && k == 49) 
+                {
+                    printf("x:%s",glm::to_string(x).c_str()); 
+                    printf("start position: %s, size: %s:\nposition | normal\n", glm::to_string(positions[3]).c_str(), glm::to_string(positions[5]-positions[3]).c_str());
+                    for (auto const& hermPair: hermiteList)
+                    {
+                        printf("%s,%s\n", glm::to_string(hermPair.first).c_str(), glm::to_string(hermPair.second).c_str());
+                    }
+                }
+                for (auto const& edge: unequalEdges)
+                {
+                    std::pair<size_t, uint8_t> edgeLookup{calulateEdgeLookup(grid,i,j,k,edge)};
+                    //This will return {} if edgePos not in edgeMap
+                    edgeMap[edgeLookup].push_back(x);
+                }
+			}
+		}
+	}
+
+    for (auto const& edgeVec: edgeMap)
+    {
+        std::vector<glm::vec3> const& newVerts{edgeVec.second};
+        if (newVerts.size() != 4)
+        {
+            //CHECK IF WE ARE ON EDGE OF GRID
+            continue;
+        }
+        //Handle different cases for x, y or z edges for correct triangle order
+        switch (edgeVec.first.second)
+        {
+            case 2:
+                vertices.push_back({newVerts[2], {0,0,0}});
+                vertices.push_back({newVerts[0], {0,0,0}});
+                vertices.push_back({newVerts[1], {0,0,0}});
+                vertices.push_back({newVerts[3], {0,0,0}});
+                vertices.push_back({newVerts[2], {0,0,0}});
+                vertices.push_back({newVerts[1], {0,0,0}});
+                break;
+            case 0: case 1:
+                vertices.push_back({newVerts[0], {0,0,0}});
+                vertices.push_back({newVerts[1], {0,0,0}});
+                vertices.push_back({newVerts[3], {0,0,0}});
+                vertices.push_back({newVerts[2], {0,0,0}});
+                vertices.push_back({newVerts[0], {0,0,0}});
+                vertices.push_back({newVerts[3], {0,0,0}});
+                break;
+        }
+    }
+}
+
+uint16_t MarchingCubes::msEdgeTable[256]{
     0x0  , 0x109, 0x203, 0x30a, 0x406, 0x50f, 0x605, 0x70c,
     0x80c, 0x905, 0xa0f, 0xb06, 0xc0a, 0xd03, 0xe09, 0xf00,
     0x190, 0x99 , 0x393, 0x29a, 0x596, 0x49f, 0x795, 0x69c,
@@ -132,9 +381,9 @@ static uint16_t edgeTable[256]{
     0xe90, 0xf99, 0xc93, 0xd9a, 0xa96, 0xb9f, 0x895, 0x99c,
     0x69c, 0x795, 0x49f, 0x596, 0x29a, 0x393, 0x99 , 0x190,
     0xf00, 0xe09, 0xd03, 0xc0a, 0xb06, 0xa0f, 0x905, 0x80c,
-    0x70c, 0x605, 0x50f, 0x406, 0x30a, 0x203, 0x109, 0x0   };
+    0x70c, 0x605, 0x50f, 0x406, 0x30a, 0x203, 0x109, 0x0};
 
-static int8_t triTable[256][16]{
+int8_t MarchingCubes::msTriTable[256][16]{
     {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
     {0, 8, 3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
     {0, 1, 9, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
@@ -392,215 +641,51 @@ static int8_t triTable[256][16]{
     {0, 3, 8, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
     {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}};
 
-vec3 interpolate(Grid const& grid, unsigned const& i, unsigned const& j, unsigned const& k)
-{
-    return {
-        grid.mOrigin[0]+(double)i/grid.mDim[0]*grid.mSize[0],
-        grid.mOrigin[1]+(double)j/grid.mDim[1]*grid.mSize[1],
-        grid.mOrigin[2]+(double)k/grid.mDim[2]*grid.mSize[2]};
-}
+uint16_t DualContour::msEdgeTable[256]{
+    0x0  , 0x109, 0x203, 0x30a, 0x406, 0x50f, 0x605, 0x70c,
+    0x80c, 0x905, 0xa0f, 0xb06, 0xc0a, 0xd03, 0xe09, 0xf00,
+    0x190, 0x99 , 0x393, 0x29a, 0x596, 0x49f, 0x795, 0x69c,
+    0x99c, 0x895, 0xb9f, 0xa96, 0xd9a, 0xc93, 0xf99, 0xe90,
+    0x230, 0x339, 0x33 , 0x13a, 0x636, 0x73f, 0x435, 0x53c,
+    0xa3c, 0xb35, 0x83f, 0x936, 0xe3a, 0xf33, 0xc39, 0xd30,
+    0x3a0, 0x2a9, 0x1a3, 0xaa , 0x7a6, 0x6af, 0x5a5, 0x4ac,
+    0xbac, 0xaa5, 0x9af, 0x8a6, 0xfaa, 0xea3, 0xda9, 0xca0,
+    0x460, 0x569, 0x663, 0x76a, 0x66 , 0x16f, 0x265, 0x36c,
+    0xc6c, 0xd65, 0xe6f, 0xf66, 0x86a, 0x963, 0xa69, 0xb60,
+    0x5f0, 0x4f9, 0x7f3, 0x6fa, 0x1f6, 0xff , 0x3f5, 0x2fc,
+    0xdfc, 0xcf5, 0xfff, 0xef6, 0x9fa, 0x8f3, 0xbf9, 0xaf0,
+    0x650, 0x759, 0x453, 0x55a, 0x256, 0x35f, 0x55 , 0x15c,
+    0xe5c, 0xf55, 0xc5f, 0xd56, 0xa5a, 0xb53, 0x859, 0x950,
+    0x7c0, 0x6c9, 0x5c3, 0x4ca, 0x3c6, 0x2cf, 0x1c5, 0xcc ,
+    0xfcc, 0xec5, 0xdcf, 0xcc6, 0xbca, 0xac3, 0x9c9, 0x8c0,
+    0x8c0, 0x9c9, 0xac3, 0xbca, 0xcc6, 0xdcf, 0xec5, 0xfcc,
+    0xcc , 0x1c5, 0x2cf, 0x3c6, 0x4ca, 0x5c3, 0x6c9, 0x7c0,
+    0x950, 0x859, 0xb53, 0xa5a, 0xd56, 0xc5f, 0xf55, 0xe5c,
+    0x15c, 0x55 , 0x35f, 0x256, 0x55a, 0x453, 0x759, 0x650,
+    0xaf0, 0xbf9, 0x8f3, 0x9fa, 0xef6, 0xfff, 0xcf5, 0xdfc,
+    0x2fc, 0x3f5, 0xff , 0x1f6, 0x6fa, 0x7f3, 0x4f9, 0x5f0,
+    0xb60, 0xa69, 0x963, 0x86a, 0xf66, 0xe6f, 0xd65, 0xc6c,
+    0x36c, 0x265, 0x16f, 0x66 , 0x76a, 0x663, 0x569, 0x460,
+    0xca0, 0xda9, 0xea3, 0xfaa, 0x8a6, 0x9af, 0xaa5, 0xbac,
+    0x4ac, 0x5a5, 0x6af, 0x7a6, 0xaa , 0x1a3, 0x2a9, 0x3a0,
+    0xd30, 0xc39, 0xf33, 0xe3a, 0x936, 0x83f, 0xb35, 0xa3c,
+    0x53c, 0x435, 0x73f, 0x636, 0x13a, 0x33 , 0x339, 0x230,
+    0xe90, 0xf99, 0xc93, 0xd9a, 0xa96, 0xb9f, 0x895, 0x99c,
+    0x69c, 0x795, 0x49f, 0x596, 0x29a, 0x393, 0x99 , 0x190,
+    0xf00, 0xe09, 0xd03, 0xc0a, 0xb06, 0xa0f, 0x905, 0x80c,
+    0x70c, 0x605, 0x50f, 0x406, 0x30a, 0x203, 0x109, 0x0};
 
-vec3 vertexInterp(iso_uint_t const& isolevel, glm::vec3 const& p1, glm::vec3 const& p2, iso_uint_t const& valp1, iso_uint_t const& valp2)
-{
-	if (isolevel == valp1)
-		return(p1);
-	if (isolevel == valp2)
-		return(p2);
-	if (valp1 == valp2)
-		return(p1);
-	double mu = (isolevel - valp1) / (valp2 - valp1);
-	return {p1.x + mu * (p2.x - p1.x),
-            p1.y + mu * (p2.y - p1.y), 
-            p1.z + mu * (p2.z - p1.z)};
-}
 
-// Move collision table used to determine the edge to check for collision
-// in the map. For instance, if we lookup edge 0 we get (010(binary),4), 
-// corresponding to "edge 4 on cube situated at x-0,y-1,z-0." 
-static std::tuple<uint8_t, uint8_t> moveCollisionTable[12]{
-    std::make_tuple(2,0),
-    std::make_tuple(2,5),
-    std::make_tuple(2,6),
-    std::make_tuple(2,7),
-
-    std::make_tuple(-1,-1),
-    std::make_tuple(-1,-1),
-    std::make_tuple(1,4),
-    std::make_tuple(4,5),
-
-    std::make_tuple(4,9),
-    std::make_tuple(-1,-1),
-    std::make_tuple(1,9),
-    std::make_tuple(1,8)
-};
-
-void polygonise(Grid const& grid, iso_uint_t const& isolevel, std::vector<Vertex>& vertices, std::vector<unsigned>& indices)
-{
-    std::map<std::tuple<unsigned, unsigned, unsigned, uint8_t>, std::vector<unsigned>> edgePosIndexMap;
-    for (unsigned k = 0; k < grid.mDim[2]-1; ++k)
-    {
-        for (unsigned j = 0; j < grid.mDim[1]-1; ++j)
-        {
-            for (unsigned i = 0; i < grid.mDim[0]-1; ++i)
-            {
-                iso_uint_t values[8]{
-                    grid.mGrid[i][j][k+1],
-                    grid.mGrid[i+1][j][k+1],
-                    grid.mGrid[i+1][j][k],
-                    grid.mGrid[i][j][k],
-                    grid.mGrid[i][j+1][k+1],
-                    grid.mGrid[i+1][j+1][k+1],
-                    grid.mGrid[i+1][j+1][k],
-                    grid.mGrid[i][j+1][k]
-                };
-                glm::vec3 positions[8]{
-                    interpolate(grid, i, j, k+1),
-                    interpolate(grid, i+1, j, k+1),
-                    interpolate(grid, i+1, j, k),
-                    interpolate(grid, i, j, k),
-                    interpolate(grid, i, j+1, k+1),
-                    interpolate(grid, i+1, j+1, k+1),
-                    interpolate(grid, i+1, j+1, k),
-                    interpolate(grid, i, j+1, k)
-                };
-                glm::vec3 vertList[12];
-
-                uint8_t cubeindex = 0;
-                if (values[0] < isolevel)
-                     cubeindex |= 1;
-                if (values[1] < isolevel)
-                     cubeindex |= 2;
-                if (values[2] < isolevel)
-                     cubeindex |= 4;
-                if (values[3] < isolevel)
-                     cubeindex |= 8;
-                if (values[4] < isolevel)
-                     cubeindex |= 16;
-                if (values[5] < isolevel)
-                     cubeindex |= 32;
-                if (values[6] < isolevel)
-                     cubeindex |= 64;
-                if (values[7] < isolevel)
-                     cubeindex |= 128;
-
-                if (edgeTable[cubeindex] == 0)
-                    continue;
-
-                if (edgeTable[cubeindex] & 1)
-                    vertList[0] = vertexInterp(isolevel,positions[0],positions[1],values[0],values[1]);
-                if (edgeTable[cubeindex] & 2)
-                    vertList[1] = vertexInterp(isolevel,positions[1],positions[2],values[1],values[2]);
-                if (edgeTable[cubeindex] & 4)
-                    vertList[2] = vertexInterp(isolevel,positions[2],positions[3],values[2],values[3]);
-                if (edgeTable[cubeindex] & 8)
-                    vertList[3] = vertexInterp(isolevel,positions[3],positions[0],values[3],values[0]);
-                if (edgeTable[cubeindex] & 16)
-                    vertList[4] = vertexInterp(isolevel,positions[4],positions[5],values[4],values[5]);
-                if (edgeTable[cubeindex] & 32)
-                    vertList[5] = vertexInterp(isolevel,positions[5],positions[6],values[5],values[6]);
-                if (edgeTable[cubeindex] & 64)
-                    vertList[6] = vertexInterp(isolevel,positions[6],positions[7],values[6],values[7]);
-                if (edgeTable[cubeindex] & 128)
-                    vertList[7] = vertexInterp(isolevel,positions[7],positions[4],values[7],values[4]);
-                if (edgeTable[cubeindex] & 256)
-                    vertList[8] = vertexInterp(isolevel,positions[0],positions[4],values[0],values[4]);
-                if (edgeTable[cubeindex] & 512)
-                    vertList[9] = vertexInterp(isolevel,positions[1],positions[5],values[1],values[5]);
-                if (edgeTable[cubeindex] & 1024)
-                    vertList[10] = vertexInterp(isolevel,positions[2],positions[6],values[2],values[6]);
-                if (edgeTable[cubeindex] & 2048)
-                    vertList[11] = vertexInterp(isolevel,positions[3],positions[7],values[3],values[7]);
-
-                for (unsigned ind = 0; triTable[cubeindex][ind] != -1; ind += 3) 
-                {
-                    for (uint8_t coord = 0; coord < 3; ++coord)
-                    {
-                        // Note: we cast here because we can't get a -1.
-                        uint8_t edgeIndex{(uint8_t)triTable[cubeindex][ind+coord]};
-                        std::tuple<uint8_t,uint8_t> mvDir{moveCollisionTable[edgeIndex]};
-
-                        // Calculate offset from 3 bit uint:
-                        // 100 corresponds to (-1,0,0),
-                        // 010 corresponds to (0,-1,0),
-                        // 001 corresponds to (0,0,-1).
-                        unsigned offsetMove[3]{
-                            i-(std::get<0>(mvDir)==4),
-                            j-(std::get<0>(mvDir)==2),
-                            k-(std::get<0>(mvDir)==1)};
-                        auto edgePos = std::make_tuple(offsetMove[0],offsetMove[1],offsetMove[2],edgeIndex);
-
-                        auto edgeFind = edgePosIndexMap.find(edgePos);
-                        std::vector<unsigned>& lookup{edgePosIndexMap[edgePos]};
-                        if (std::get<0>(mvDir) == (uint8_t)-1)
-                        {
-                            indices.push_back(vertices.size());
-                            lookup.push_back(vertices.size());
-                            vertices.push_back({vertList[edgeIndex],{0,0,0}});
-                        }
-                        else if (edgeFind != edgePosIndexMap.end())
-                        {
-                            bool collision{false};
-                            for (auto const& testIndex: lookup)
-                            {
-                                if (testIndex == (unsigned)-1)
-                                    continue;
-                                Vertex& testVert{vertices[testIndex]};
-                                glm::vec3 diff{glm::abs(testVert.mPosition-vertList[edgeIndex])};
-                                glm::vec3 largest{glm::max(glm::abs(testVert.mPosition), glm::abs(vertList[edgeIndex]))};
-//                                if (length(testVert.mPosition-vertList[edgeIndex]) <= FLT_EPSILON)
-                                // This threshold can be tweaked to connect vertices that are within a range,
-                                // making a more connected looking shape, but with the issue that the mesh
-                                // will be different dependent on which vertices are added to the map first. 
-                                if (diff.x <= FLT_EPSILON*largest.x && diff.y <= FLT_EPSILON*largest.y && diff.z <= FLT_EPSILON*largest.z)
-                                {
-                                    indices.push_back(testIndex);
-                                    collision = true;
-                                    break;
-                                } 
-                            }
-                            if (!collision)
-                            {
-                                indices.push_back(vertices.size());
-                                // Set up edges for deletion
-                                if (edgeIndex == 2 || edgeIndex == 3 || edgeIndex == 11)
-                                    lookup.push_back(-1);
-                                else 
-                                    lookup.push_back(vertices.size());
-                                vertices.push_back({vertList[edgeIndex],{0,0,0}});
-                            }
-                        }
-                        else
-                        {
-                            indices.push_back(vertices.size());
-                            if (edgeIndex == 2 || edgeIndex == 3 || edgeIndex == 11)
-                                lookup.push_back(-1);
-                            else 
-                                lookup.push_back(vertices.size());
-                            vertices.push_back({vertList[edgeIndex],{0,0,0}});
-                        }
-                    }
-//                    // Set up top edges for deletion
-//                    auto topEdgeFind = edgePosIndexMap.find(std::make_tuple(i,j,k,6));
-//                    if (topEdgeFind != edgePosIndexMap.end())
-//                        (*topEdgeFind).second.back() = -1;
-//                    topEdgeFind = edgePosIndexMap.find(std::make_tuple(i,j,k,7));
-//                    if (topEdgeFind != edgePosIndexMap.end())
-//                        (*topEdgeFind).second.back() = -1;
-                }
-//                auto topRightEdgeFind = edgePosIndexMap.find(std::make_tuple(i,j,k,5));
-//                if (topRightEdgeFind != edgePosIndexMap.end())
-//                    (*topRightEdgeFind).second.back() = -1;
-//
-                // Deleting useless edges from map
-//                for (auto edgeIndexPair = edgePosIndexMap.begin(); edgeIndexPair != edgePosIndexMap.end(); ++edgeIndexPair)
-//                {
-//                    if ((*edgeIndexPair).second.back() == (unsigned)-1)
-//                    {
-//                        edgePosIndexMap.erase(edgeIndexPair++);
-//                    }
-//                }
-//                std::cout<<edgePosIndexMap.size()<<std::endl;
-            }
-        }
-    }
-}
+std::pair<uint8_t, uint8_t> DualContour::msEdgeToVertTable[12]{
+    std::make_pair(0,1),
+	std::make_pair(1,2),
+	std::make_pair(2,3),
+	std::make_pair(3,0),
+	std::make_pair(4,5),
+	std::make_pair(5,6),
+	std::make_pair(6,7),
+	std::make_pair(7,4),
+	std::make_pair(0,4),
+	std::make_pair(1,5),
+	std::make_pair(2,6),
+    std::make_pair(3,7)};

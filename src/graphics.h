@@ -11,26 +11,35 @@
 #include <glm/ext.hpp>
 #include <map>
 
-#include "marching_cubes.h"
+#include "polygoniser.h"
+
+struct VboIndexer 
+{
+    GLint index;
+    GLsizei size;
+    bool fPureVertexDraw;
+};
 
 class Graphics 
 {
 private:
-    std::vector<Vertex> mVertices;
+    std::vector<Vertex> mVertices, mLines;
     std::vector<unsigned> mIndices;
-    std::map<iso_uint_t, std::vector<std::pair<size_t, size_t>>> mSurfaceIndexMap;
-	GLuint mVbo, mEbo, mVao;
+    std::map<float, VboIndexer> mSurfaceIndexMap;
+    std::vector<VboIndexer> mLineIndexers;
+	GLuint mVbo, mLineVbo, mEbo, mVao;
     GLfloat mWidth, mHeight;
     GLuint mShaderProgram;
     glm::mat3 mPmat, mVmat, mMmat;
     GLFWwindow* mWindow;
-    vec3 mCamPos, mCamDir;
+    glm::vec3 mCamPos, mCamDir;
     double mHoriAngle, mVertAngle;
     GLfloat mViewScalar;
     GLuint mColorScheme;
     static GLuint msColorSchemeCount;
 
     bool fMustUpdate;
+    bool fDrawAxes;
 
     void setShaders (char const*, char const*);
 
@@ -39,14 +48,16 @@ public:
 
     Graphics (GLfloat const&, GLfloat const&, char const*, char const*, const char* title="Untitled Window");
 
-    void setCam (vec3 const&, vec3 const&);
-    void moveCam (vec3 const&);
-    void addSurface (iso_uint_t const& isolevel, std::vector<Vertex> const& surfaceVerts, std::vector<unsigned> const& surfaceInds);
+    void setCam (glm::vec3 const&, glm::vec3 const&);
+    void moveCam (glm::vec3 const&);
+    void addSurface (float const&, std::vector<Vertex> const&, std::vector<unsigned> const&);
+    void addSurface (float const&, std::vector<Vertex> const&);
     void scale (GLfloat const&);
 
     inline GLFWwindow* const& getWindow () const {return mWindow;};
 
     void mustUpdate ();
+    void toggleAxes (GLfloat const& sz=1.0f);
 
     void update ();
     void render (double const&, double const&);
@@ -60,7 +71,7 @@ extern Graphics g;
 
 struct Mesh
 {
-    std::vector<vec3> mVertices;
+    std::vector<glm::vec3> mVertices;
     std::vector<unsigned> mIndices;
 };
 

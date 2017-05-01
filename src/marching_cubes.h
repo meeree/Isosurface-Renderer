@@ -7,10 +7,12 @@
 #include <glm/glm.hpp>
 
 //Define isolevel uint size 
-typedef uint8_t iso_uint_t;
+//#define FLOAT_ISO_VALUE
+typedef float iso_uint_t;
+
 typedef std::vector<std::vector<std::vector<iso_uint_t>>> grid_t;
-//Define vec3 type
-typedef glm::vec3 vec3;
+//Define glm::vec3 type
+typedef glm::vec3 glm::vec3;
 
 struct Grid
 {
@@ -27,8 +29,8 @@ struct Voxel
 
 struct Vertex 
 {
-    vec3 mPosition;
-    vec3 mNormal;
+    glm::vec3 mPosition;
+    glm::vec3 mNormal;
 };
 
 void resizeGridData (grid_t&, size_t const (&)[3]);

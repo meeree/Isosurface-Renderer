@@ -49,7 +49,7 @@ GLuint Graphics::loadInShader(char const *fname, GLenum const &shaderType)
     return shader;
 }
 
-GLuint Graphics::msColorSchemeCount = 1;
+GLuint Graphics::msColorSchemeCount = 2;
 
 void Graphics::setShaders (char const* vertLoc, char const* fragLoc)
 {
@@ -68,7 +68,7 @@ void Graphics::setShaders (char const* vertLoc, char const* fragLoc)
 }
 
 Graphics::Graphics (GLfloat const& width_, GLfloat const& height_, char const* vertLoc_, char const* fragLoc_, const char* title_)
-    : mWidth{width_}, mHeight{height_}, mColorScheme{0}, mViewScalar{1.0f}, mModMat{1.0f}, mViewMat{1.0f}, mHoriAngle{3.14}, mVertAngle{0.0}
+    : mWidth{width_}, mHeight{height_}, mColorScheme{0}, mViewScalar{1.0f}, mModMat{1.0f}, mViewMat{1.0f}, mHoriAngle{3.14}, mVertAngle{0.0}, fMustUpdate{false}, fDrawAxes{false}
 {
     if(!glfwInit()) {
         std::cerr<<"failed to initialize glfw"<<std::endl;
@@ -111,35 +111,37 @@ Graphics::Graphics (GLfloat const& width_, GLfloat const& height_, char const* v
     scale(1.0f);
 }
 
-void Graphics::addSurface (iso_uint_t const& isolevel, std::vector<Vertex> const& surfaceVerts, std::vector<unsigned> const& surfaceInds)
+void Graphics::addSurface (float const& isolevel, std::vector<Vertex> const& surfaceVerts, std::vector<unsigned> const& surfaceInds)
 {
-    if (surfaceInds.size() == 0)
-        return;
-    size_t vertOffset{mVertices.size()}, indOffset{mVertices.size()};
+    size_t vertOffset{mVertices.size()}, indOffset{mIndices.size()};
     mVertices.insert(mVertices.end(), surfaceVerts.begin(), surfaceVerts.end());
     mIndices.insert(mIndices.end(), surfaceInds.begin(), surfaceInds.end());
     for (unsigned i = indOffset; i < mIndices.size(); ++i)
     {
         mIndices[i] += vertOffset;
     }
-
-    if (mSurfaceIndexMap.find(isolevel) == mSurfaceIndexMap.end())
-        mSurfaceIndexMap[isolevel] = {{indOffset, surfaceInds.size()}};
-    else 
-        mSurfaceIndexMap[isolevel].push_back({indOffset, surfaceInds.size()});
     glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex)*mVertices.size(), mVertices.data(), GL_DYNAMIC_DRAW);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned)*mIndices.size(), mIndices.data(), GL_DYNAMIC_DRAW);
+    mSurfaceIndexMap[isolevel] = {(GLint)indOffset, (GLsizei)surfaceInds.size(), false};
 }
 
-void Graphics::setCam (vec3 const& camPos, vec3 const& camDir)
+void Graphics::addSurface (float const& isolevel, std::vector<Vertex> const& surfaceVerts)
+{
+    size_t vertOffset{mVertices.size()};
+    mVertices.insert(mVertices.end(), surfaceVerts.begin(), surfaceVerts.end());
+    glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex)*mVertices.size(), mVertices.data(), GL_DYNAMIC_DRAW);
+    mSurfaceIndexMap[isolevel] = {(GLint)vertOffset, (GLsizei)surfaceVerts.size(), true};
+}
+
+void Graphics::setCam (glm::vec3 const& camPos, glm::vec3 const& camDir)
 {
 	mCamPos = camPos;
     mCamDir = glm::normalize(camDir);
-//	mHoriAngle = acos(dot(vec3(0.0f,0.0f,1.0f), mCamDir));
-//	mVertAngle = acos(dot(vec3(0.0f,1.0f,0.0f), mCamDir));
+//	mHoriAngle = acos(dot(glm::vec3(0.0f,0.0f,1.0f), mCamDir));
+//	mVertAngle = acos(dot(glm::vec3(0.0f,1.0f,0.0f), mCamDir));
 }
 
-void Graphics::moveCam (vec3 const& inc)
+void Graphics::moveCam (glm::vec3 const& inc)
 {
     mCamPos += inc;
 }
@@ -155,13 +157,32 @@ void Graphics::update ()
     fMustUpdate = false;
 }
 
+void Graphics::toggleAxes (GLfloat const& sz)
+{
+    if (!fDrawAxes)
+    {
+        //WORK ON THIS
+        mLineIndexers.push_back({(GLint)mLines.size(), 6, true});
+        mLines.push_back({{0,0,0},{1,0,0}});
+        mLines.push_back({{sz,0,0},{1,0,0}});
+        mLines.push_back({{0,0,0},{0,1,0}});
+        mLines.push_back({{0,sz,0},{0,1,0}});
+        mLines.push_back({{0,0,0},{0,0,1}});
+        mLines.push_back({{0,0,sz},{0,0,1}});
+//        glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex)*mLines.size(), mLines.data(), GL_DYNAMIC_DRAW);
+    }
+    else
+        mLines.erase(mLines.end()-6, mLines.end());
+    fDrawAxes = !fDrawAxes;
+}
+
 void Graphics::render (double const& t, double const&)
 {
     if (fMustUpdate)
     {
         update();
     }
-    GLfloat const color [4] {0.0f, 0.0f, 0.0f, 1.0f};
+    GLfloat const color [4] {0.2f, 0.2f, 0.2f, 1.0f};
     glClearBufferfv(GL_COLOR, 0.0f, color);
     glClear(GL_DEPTH_BUFFER_BIT);
 
@@ -171,18 +192,18 @@ void Graphics::render (double const& t, double const&)
     mHoriAngle += 6*(glfwGetTime()-t)*(mWidth/2-xpos);
     mVertAngle += 6*(glfwGetTime()-t)*(mHeight/2-ypos);
 
-    mCamDir = vec3(
+    mCamDir = glm::vec3(
         cos(mVertAngle) * sin(mHoriAngle),
         sin(mVertAngle),
         cos(mVertAngle) * cos(mHoriAngle)
     );
-    vec3 right{
+    glm::vec3 right{
         sin(mHoriAngle - 3.14f/2.0f),
         0,
         cos(mHoriAngle - 3.14f/2.0f)
     };
-    vec3 up = glm::cross(right, mCamDir);
-    vec3 moveVec{0.0f};
+    glm::vec3 up = glm::cross(right, mCamDir);
+    glm::vec3 moveVec{0.0f};
     if (glfwGetKey(mWindow, GLFW_KEY_S) == GLFW_PRESS)
     {
         moveVec -= 0.3f * mCamDir;
@@ -207,7 +228,7 @@ void Graphics::render (double const& t, double const&)
     {
         moveVec += 0.3f * right;
     }
-    if (length(moveVec) > 0.00001f)
+    if (length(moveVec) > FLT_EPSILON)
     {
         moveCam(moveVec);
     }
@@ -215,13 +236,21 @@ void Graphics::render (double const& t, double const&)
     glUniformMatrix4fv(3, 1, GL_FALSE, glm::value_ptr(mViewMat));
     glUniform3f(9, mCamPos.x, mCamPos.y, mCamPos.z);
     
-    for (auto const& isoIndVecPair: mSurfaceIndexMap)
+//    if (mLines.size() > 0)
+//    {
+//        //FINISH THIS
+//        glUniform1i(10, 1);
+//        glDrawArrays(GL_LINES, mVertices.size()-6, 6);
+//        glUniform1i(10, 0);
+//    }
+
+    for (auto const& isoIndPair: mSurfaceIndexMap)
     {
-        glUniform1ui(5, isoIndVecPair.first);
-        for (auto const& startEndPair: isoIndVecPair.second)
-        {
-            glDrawElements(GL_TRIANGLES, startEndPair.second, GL_UNSIGNED_INT, (void*)startEndPair.first);
-        }
+        glUniform1f(5, isoIndPair.first);
+        if (isoIndPair.second.fPureVertexDraw)
+            glDrawArrays(GL_TRIANGLES, isoIndPair.second.index, isoIndPair.second.size);
+        else 
+            glDrawElements(GL_TRIANGLES, isoIndPair.second.size, GL_UNSIGNED_INT, (void*)((size_t)isoIndPair.second.index));
     }
     glfwSwapBuffers(mWindow);
 }

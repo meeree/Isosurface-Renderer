@@ -13,8 +13,8 @@ layout (location=7) uniform float scalar;
 layout (location=8) uniform uint colorScheme;
 layout (location=9) uniform vec3 camPos;
 
-uniform vec3 lightIntensities = vec3(0.5);
-uniform vec3 ambient = vec3(0.4);
+uniform vec3 lightIntensities = vec3(0.7);
+uniform vec3 ambient = vec3(0.2);
 
 out VS_OUT
 {   vec4 color;
@@ -45,14 +45,15 @@ void main(void)
     float p = length(position);
     if (colorScheme == 0)     
     {
-        vs_out.color = vec4(abs(cos(p)), abs(sin(p)), 0.0, 1.0);
+//        vs_out.color = vec4(abs(cos(p)), abs(sin(p)), 0.0, 1.0);
+        vs_out.color = vec4(0.5);
      //   vs_out.color = vec4(mix(pallete[kInt-1], pallete[kInt], k-kInt), 1.0);
     }
 
     gl_Position = pMat*vMat*mMat*vec4(scalar*position, 1.0);
 
-    vec3 pos = mat3(vMat*mMat) * scalar * position; 
+    vec3 pos = mat3(vMat*mMat)*scalar*position; 
     vec3 l = normalize(mat3(vMat*mMat)*camPos-pos);
-    float brightness = clamp(abs(dot(mat3(vMat*mMat)*normal, l)), 0.0, 1.0);
-    vs_out.color = vec4((ambient + brightness * lightIntensities) * vs_out.color.rgb, vs_out.color.a);
+    float brightness = clamp(dot(mat3(vMat*mMat)*normal, l), 0.0, 1.0);
+    vs_out.color = vec4((ambient + brightness*lightIntensities)*vs_out.color.rgb, vs_out.color.a);
 }

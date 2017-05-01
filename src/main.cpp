@@ -3,15 +3,16 @@
 #include <ctime>
 #include <cstdlib>
 #include <algorithm>
-
+#include <functional>
 #include "graphics.h"
+#include "density_sampler.h"
 
 void mouseButtonCallback (GLFWwindow*, int, int, int)
 {
 
 }
 
-Graphics g{1920, 1080, "/home/jhazelden/Cpp/OpenGL/volumeRenderer/src/Shaders/vert.glsl", "/home/jhazelden/Cpp/OpenGL/volumeRenderer/src/Shaders/frag.glsl", "Volume renderer v0.1"};
+Graphics g{1920, 1080, "/home/jhazelden/Cpp/OpenGL/volumeRenderer/src/Shaders/vert2.glsl", "/home/jhazelden/Cpp/OpenGL/volumeRenderer/src/Shaders/frag2.glsl", "Volume renderer v0.1"};
 
 void keyCallback(GLFWwindow*, int key, int, int action, int)
 {   
@@ -34,6 +35,10 @@ void keyCallback(GLFWwindow*, int key, int, int action, int)
         GLFWAttrs.scalar *= 10.0f/11;
         g.scale(GLFWAttrs.scalar);
     }
+    if (key == GLFW_KEY_X && action == GLFW_PRESS)
+    {
+        g.toggleAxes();
+    }
 }
 
 void getNormalsAndClean (std::vector<Vertex>& vertices, std::vector<unsigned>& indices, std::vector<glm::vec3>& faceNormals, bool const& normalize=true)
@@ -43,8 +48,8 @@ void getNormalsAndClean (std::vector<Vertex>& vertices, std::vector<unsigned>& i
         Vertex& v1{vertices[indices[i]]};
         Vertex& v2{vertices[indices[i+1]]};
         Vertex& v3{vertices[indices[i+2]]};
-        vec3 nm{glm::cross(v2.mPosition-v1.mPosition, v3.mPosition-v1.mPosition)};
-        if (length(nm) <= DBL_EPSILON)
+        glm::vec3 nm{glm::cross(v2.mPosition-v1.mPosition, v3.mPosition-v1.mPosition)};
+        if (length(nm) <= 0.000001)
         {
             indices[i] = -1;
             indices[i+1] = -1;
@@ -59,7 +64,39 @@ void getNormalsAndClean (std::vector<Vertex>& vertices, std::vector<unsigned>& i
     faceNormals.erase(std::remove_if(faceNormals.begin(), faceNormals.end(), [](glm::vec3 const& v){return std::isnan(v.x);}), faceNormals.end()); 
 }
 
-void addAvgNormals (std::vector<Vertex>& vertices, std::vector<unsigned>& indices, std::vector<glm::vec3>&& faceNormals, bool const& normalize=true)
+void simpleVertexNormals (std::vector<Vertex>& vertices, bool const& normalize=true)
+{
+    for (unsigned i = 0; i < vertices.size(); i += 3)
+    {
+        Vertex& v1{vertices[i]};    
+        Vertex& v2{vertices[i+1]};    
+        Vertex& v3{vertices[i+2]};    
+
+        glm::vec3 nm{glm::cross(v2.mPosition-v1.mPosition, v3.mPosition-v1.mPosition)};
+        if (length(nm) < 0.00000001)
+        {
+            v1.mNormal.x = nanf("");
+            v2.mNormal.x = nanf("");
+            v3.mNormal.x = nanf("");
+            continue;
+        }
+        if (normalize)
+            nm = glm::normalize(nm);
+        
+        v1.mNormal = nm;
+        v2.mNormal = nm;
+        v3.mNormal = nm;
+    }
+    vertices.erase(std::remove_if(vertices.begin(), vertices.end(), [](Vertex const& v){return std::isnan(v.mPosition.x);}), vertices.end()); 
+}
+
+enum ePhongCalc
+{
+    PHONG_AVERAGE, 
+    PHONG_AREA,
+    PHONG_INV_AREA
+};
+void addPhongNormals (std::vector<Vertex>& vertices, std::vector<unsigned>& indices, std::vector<glm::vec3> const& faceNormals, ePhongCalc const& calc, bool const& normalize=true)
 {
     for (auto& v: vertices)
     {
@@ -70,7 +107,13 @@ void addAvgNormals (std::vector<Vertex>& vertices, std::vector<unsigned>& indice
         for (uint8_t coord = 0; coord < 3; ++coord)
         {
             Vertex& v{vertices[indices[i+coord]]};
-            v.mNormal += std::move(faceNormals[i/3]);
+            switch (calc)
+            {
+                case PHONG_AVERAGE: v.mNormal += faceNormals[i/3]/length(faceNormals[i/3]); break;
+                case PHONG_AREA: v.mNormal += faceNormals[i/3]; break;
+                case PHONG_INV_AREA: v.mNormal += faceNormals[i/3]/pow(length(faceNormals[i/3]),2); break;
+                default: std::cerr<<"Error: phong calculation undefined. Must be one of PHONG_AREA, PHONG_AREA, PHONG_INV_AREA."<<std::endl; return;
+            }
         }
     }
     if (normalize)
@@ -82,10 +125,10 @@ void addAvgNormals (std::vector<Vertex>& vertices, std::vector<unsigned>& indice
     }
 }
 
-iso_uint_t stellaTransform (double const& x, double const& y, double const& z, unsigned const& iterMax, double const& capSqr, unsigned const& power)
+float stellaTransform (double const& x, double const& y, double const& z, unsigned const& iterMax, double const& capSqr, unsigned const& power)
 {
     double x_{x}, y_{y}, z_{z};
-    iso_uint_t p;
+    float p;
     for (p = 0; p < iterMax; ++p)
     {
         auto oldX = x_;
@@ -116,85 +159,125 @@ iso_uint_t stellaTransform (double const& x, double const& y, double const& z, u
             break;
     }
     return p;
-//    auto ellipsoid = 1.0-(pow(x/*-0.5*cos(sqrt(x*x+y*y))*/,2)/4+pow(y/*-0.5*sin(sqrt(x*x+y*y))*/,2));
-//    auto ellipsoidY = sqrt(1.0-z*z-x*x/4);
-//    return z*z<=ellipsoid
-//           || (y>=-ellipsoidY-0.5 && y<=-ellipsoidY-0.3 && 0.5>=x*x/4+z*z)
-//           || (x>=0.0 && x<=2+0.2 && 0.5/4>=z*z+y*y)
+    auto ellipsoid = 1.0-(pow(x/*-0.5*cos(sqrt(x*x+y*y))*/,2)/4+pow(y/*-0.5*sin(sqrt(x*x+y*y))*/,2));
+    auto ellipsoidY = sqrt(1.0-z*z-x*x/4);
+    return z*z<=ellipsoid
+           || (y>=-ellipsoidY-0.5 && y<=-ellipsoidY-0.3 && 0.5>=x*x/4+z*z)
+           || (x>=0.0 && x<=2+0.2 && 0.5/4>=z*z+y*y)
+
+           || (y>=-1.05 && y<=0 && 0.001>=pow(x-sqrt(2.0)+sqrt(0.001)/2,2)+z*z)
+           || (y>=-1.05 && y<=0 && 0.001>=pow(x+sqrt(2.0)-sqrt(0.001)/2,2)+z*z)
+           || (y>=-1.05 && y<=0 && 0.001>=x*x+pow(z-sqrt(0.5)+sqrt(0.001),2))
+           || (y>=-1.05 && y<=0 && 0.001>=x*x+pow(z+sqrt(0.5)-sqrt(0.001),2));
+}
 //
-//           || (y>=-1.05 && y<=0 && 0.001>=pow(x-sqrt(2.0)+sqrt(0.001)/2,2)+z*z)
-//           || (y>=-1.05 && y<=0 && 0.001>=pow(x+sqrt(2.0)-sqrt(0.001)/2,2)+z*z)
-//           || (y>=-1.05 && y<=0 && 0.001>=x*x+pow(z-sqrt(0.5)+sqrt(0.001),2))
-//           || (y>=-1.05 && y<=0 && 0.001>=x*x+pow(z+sqrt(0.5)-sqrt(0.001),2));
-}
+//void stellaCorris (Grid& grid, unsigned const& iterMax, double const& capSqr, unsigned const& power)
+//{
+//    for (unsigned k = 0; k < grid.mDim[2]; ++k)
+//    {
+//        for (unsigned j = 0; j < grid.mDim[1]; ++j)
+//        {
+//            for (unsigned i = 0; i < grid.mDim[0]; ++i)
+//            {
+//                glm::vec3 pos{interpolate(grid, i, j, k)};
+//                grid.mGrid[i][j][k] = stellaTransform(pos.x, pos.y, pos.z, iterMax, capSqr, power);
+//            }
+//        }
+//    }
+//}
 
-void stellaCorris (Grid& grid, unsigned const& iterMax, double const& capSqr, unsigned const& power)
+void translateSurface (std::vector<Vertex>& surfaceVerts, glm::vec3 const& translation)
 {
-    for (unsigned k = 0; k < grid.mDim[2]; ++k)
+    std::for_each(surfaceVerts.begin(), surfaceVerts.end(), [&](Vertex& v){v.mPosition += translation;});
+}
+//
+//template <typename Lambda>
+//void constructGrid (Grid& grid, Lambda&& f)
+//{
+//    for (unsigned k = 0; k < grid.mDim[2]; ++k)
+//    {
+//        for (unsigned j = 0; j < grid.mDim[1]; ++j)
+//        {
+//            for (unsigned i = 0; i < grid.mDim[0]; ++i)
+//            {
+//                glm::vec3 pos{interpolate(grid, i, j, k)};
+//                grid.mGrid[i][j][k] = f(pos);
+//            }
+//
+//        }
+//    }
+//}
+
+std::function<GLfloat(glm::vec3 const&)> nTorus (unsigned const& n, GLfloat const& r)
+{
+    return {[&] (glm::vec3 const& pos) 
     {
-        for (unsigned j = 0; j < grid.mDim[1]; ++j)
+        GLfloat g = pos.x*(pos.x-n);
+        for (unsigned i = 1; i < n; ++i)
         {
-            for (unsigned i = 0; i < grid.mDim[0]; ++i)
-            {
-                vec3 pos{interpolate(grid, i, j, k)};
-                grid.mGrid[i][j][k] = stellaTransform(pos.x, pos.y, pos.z, iterMax, capSqr, power);
-            }
+            g *= (pos.x-i)*(pos.x-i);
         }
-    }
-}
-
-void translateSurface (std::vector<Vertex>& surface, vec3 const& translation)
-{
-    for (auto& vert: surface)
-    {
-        vert.mPosition += translation;
-    }
+        g += pos.y*pos.y;
+        return g*g + pos.z*pos.z - r*r;
+    }};
 }
 
 int main () 
 {
-    g.setCam(vec3(0,0,-10), vec3(0,0,1));
+    g.setCam(glm::vec3(0,0,-10), glm::vec3(0,0,1));
 
     auto pMat = glm::perspective(glm::radians(45.0f),(GLfloat)1920/1080, 0.1f, 200.0f); 
     glUniformMatrix4fv(2, 1, GL_FALSE, glm::value_ptr(pMat));
     glUniformMatrix4fv(3, 1, GL_FALSE, glm::value_ptr(glm::mat4(1.0f)));
     glUniformMatrix4fv(4, 1, GL_FALSE, glm::value_ptr(glm::mat4(1.0f)));
 
-    glEnable(GL_BLEND); glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+//    glEnable(GL_BLEND); glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LESS);
     glfwSetKeyCallback(g.getWindow(), keyCallback);
     glfwSetMouseButtonCallback(g.getWindow(), mouseButtonCallback);
 
-    unsigned iterMax = 15;
-    GLfloat capSqr = 16;
-    size_t dim[3]{300,300,300};
-    double size[3]{4.0,4.0,4.0};
-    double origin[3]{-2.0,-2.0,-2.0};
+    auto f{[] (glm::vec3 const& pos)
+        {return (2*pos.y*(pos.y*pos.y-3*pos.x*pos.x)-(9*pos.z*pos.z-1))*(1-pos.z*pos.z)+pow(pos.x*pos.x+pos.y*pos.y,2);}};
+    auto h{[] (glm::vec3 const& pos)
+        {return pos.y-0.1*cos(10*(cos(pos.x)-pos.z));}};
+    auto crossCap{[] (glm::vec3 const& pos)
+        {return 4*(pow(pos.x,4)+pos.x*pos.x*pos.y*pos.y+pos.x*pos.x*pos.z*pos.z+pos.x*pos.x*pos.z)+pow(pos.y,4)+pos.y*pos.y*pos.z*pos.z-pos.y*pos.y;}};
+    auto k{[&] (glm::vec3 const& pos)
+        {return f(pos)-(nTorus(2,0.1))(pos);}};
 
-    grid_t gridData;
-    resizeGridData(gridData, dim);
-    Grid grid{gridData,{dim[0],dim[1],dim[2]},{size[0],size[1],size[2]},{origin[0],origin[1],origin[2]}};
-    stellaCorris(grid, iterMax, capSqr, 2);
-//    writeFile("", grid, "fl");
+    {
+        size_t dim[3]{100, 100, 100};
+        float size[3]{6.0, 3.0, 6.0};
+        float origin[3]{-3.0, -1.5, -3.0};
 
-//    Grid grid;
-//    readFile("fl", grid);
+        Grid grid{{dim[0],dim[1],dim[2]},{size[0],size[1],size[2]},{origin[0],origin[1],origin[2]}};
+        std::vector<Vertex> surfaceVerts;
 
-    std::vector<Vertex> surfaceVerts;
-    std::vector<unsigned> surfaceInds;
-    polygonise(grid, 10, surfaceVerts, surfaceInds);
-    std::vector<glm::vec3> faceNormals(surfaceInds.size());
-    getNormalsAndClean(surfaceVerts, surfaceInds, faceNormals, false);
-    addAvgNormals(surfaceVerts, surfaceInds, std::move(faceNormals));
-    g.addSurface(10, surfaceVerts, surfaceInds);
+        DensitySampler sampler;
+        MarchingCubes marcher;
+        DualContour countourer;
+//
+//        marcher.polygonise(grid, 0, surfaceVerts, sampler);
+//        simpleVertexNormals(surfaceVerts);
+//        translateSurface(surfaceVerts, glm::vec3(0,-2.5,0));
+//        g.addSurface(1, surfaceVerts);
+
+        surfaceVerts = {};
+        countourer.polygonise(grid, 0, surfaceVerts, sampler);
+        simpleVertexNormals(surfaceVerts);
+        translateSurface(surfaceVerts, glm::vec3(0,2.5,0));
+        g.addSurface(0, surfaceVerts);
+    }
 
     g.mustUpdate();
     GLFWAttrs.scalar = 10;
     g.scale(GLFWAttrs.scalar);
 
-    glUniform1ui(6, iterMax);
+    glUniform1f(6, 1);
 
     glfwSetInputMode(g.getWindow(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     glfwSetInputMode(g.getWindow(), GLFW_STICKY_KEYS, false);
+
+    g.toggleAxes(50);
     g.loop(0.1, 0.0);
 }
