@@ -14,6 +14,11 @@ layout (location=8) uniform uint colorScheme;
 layout (location=9) uniform vec3 camPos;
 layout (location=10) uniform bool lineDraw;
 
+layout (location=11) uniform float yMin;
+layout (location=12) uniform float yMax;
+layout (location=13) uniform float minDist;
+layout (location=14) uniform float maxDist;
+
 in VS_OUT
 {   vec3 position;
     vec3 normal;
@@ -49,8 +54,11 @@ void main(void)
     vec4 col;
     if (colorScheme == 0)
     {
+        float k = 0.1+0.5*(length(fs_in.position)-minDist)/(maxDist-minDist);
+        col = /*length(fs_in.position)-0.1 <= minDist ? vec4(0.2, 0.2, 1.0, 1.0) : */vec4(mix(mix(vec3(0.5451, 0.5137, 0.4706), vec3(0.5176, 0.3294, 0.1255), 2*min(k, 0.5)), vec3(0.3804, 0.8118, 0.0941), 2*(max(k, 0.5)-0.5)), 1.0);
+
 //        col = fs_in.color;
-        col = vec4(0.7, 0.4, 0.4, 1.0);
+//        col = vec4(0.7, 0.4, 0.4, 1.0);
     }
     else if (colorScheme == 1)
     {

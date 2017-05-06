@@ -1,11 +1,51 @@
-#include "/home/jhazelden/Cpp/OpenGL/loadinshader.cpp"
-
 #include <ctime>
 #include <cstdlib>
 #include <algorithm>
 #include <functional>
 #include "graphics.h"
 #include "density_sampler.h"
+
+#include <fstream>
+#include <iostream>
+GLuint loadInShader(char const *fname, GLenum const &shaderType) { /* Called by shaders function */
+    std::vector<char> buffer;
+    std::ifstream in;
+    in.open(fname, std::ios::binary);
+
+    if(in.is_open()) {
+        in.seekg(0, std::ios::end);
+        size_t const &length = in.tellg();
+
+        in.seekg(0, std::ios::beg);
+
+        buffer.resize(length + 1);
+        in.read(&buffer[0], length);
+        in.close();
+        buffer[length] = '\0';
+    } else {
+        std::cerr<<"Unable to open "<<fname<<std::endl;
+        exit(-1);
+    }
+
+    GLchar const *src = &buffer[0];
+
+    GLuint shader = glCreateShader(shaderType);
+    glShaderSource(shader, 1, &src, NULL);
+    glCompileShader(shader);
+    GLint test;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &test);
+
+    if(!test) {
+        std::cerr<<"Shader compilation failed with this message:"<<std::endl;
+        std::vector<char> compilationLog(512);
+        glGetShaderInfoLog(shader, compilationLog.size(), NULL, &compilationLog[0]);
+        std::cerr<<&compilationLog[0]<<std::endl;
+        glfwTerminate();
+        exit(-1);
+    }
+
+    return shader;
+}
 
 void mouseButtonCallback (GLFWwindow*, int, int, int)
 {
@@ -224,49 +264,40 @@ std::function<GLfloat(glm::vec3 const&)> nTorus (unsigned const& n, GLfloat cons
 
 int main () 
 {
-    g.setCam(glm::vec3(0,0,-10), glm::vec3(0,0,1));
+    g.setCam(glm::vec3(0,5,10), glm::vec3(0,-0.5,-1));
 
     auto pMat = glm::perspective(glm::radians(45.0f),(GLfloat)1920/1080, 0.1f, 200.0f); 
     glUniformMatrix4fv(2, 1, GL_FALSE, glm::value_ptr(pMat));
     glUniformMatrix4fv(3, 1, GL_FALSE, glm::value_ptr(glm::mat4(1.0f)));
     glUniformMatrix4fv(4, 1, GL_FALSE, glm::value_ptr(glm::mat4(1.0f)));
 
-//    glEnable(GL_BLEND); glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_BLEND); glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LESS);
     glfwSetKeyCallback(g.getWindow(), keyCallback);
     glfwSetMouseButtonCallback(g.getWindow(), mouseButtonCallback);
 
-    auto f{[] (glm::vec3 const& pos)
-        {return (2*pos.y*(pos.y*pos.y-3*pos.x*pos.x)-(9*pos.z*pos.z-1))*(1-pos.z*pos.z)+pow(pos.x*pos.x+pos.y*pos.y,2);}};
-    auto h{[] (glm::vec3 const& pos)
-        {return pos.y-0.1*cos(10*(cos(pos.x)-pos.z));}};
-    auto crossCap{[] (glm::vec3 const& pos)
-        {return 4*(pow(pos.x,4)+pos.x*pos.x*pos.y*pos.y+pos.x*pos.x*pos.z*pos.z+pos.x*pos.x*pos.z)+pow(pos.y,4)+pos.y*pos.y*pos.z*pos.z-pos.y*pos.y;}};
-    auto k{[&] (glm::vec3 const& pos)
-        {return f(pos)-(nTorus(2,0.1))(pos);}};
-
     {
-        size_t dim[3]{100, 100, 100};
-        float size[3]{6.0, 3.0, 6.0};
-        float origin[3]{-3.0, -1.5, -3.0};
+        size_t dim[3]{90, 90, 90};
+        float size[3]{2.2, 2.2, 2.2};
+        float origin[3]{-1.1, -1.1, -1.1};
 
         Grid grid{{dim[0],dim[1],dim[2]},{size[0],size[1],size[2]},{origin[0],origin[1],origin[2]}};
         std::vector<Vertex> surfaceVerts;
 
         DensitySampler sampler;
-        MarchingCubes marcher;
-        DualContour countourer;
-//
-//        marcher.polygonise(grid, 0, surfaceVerts, sampler);
-//        simpleVertexNormals(surfaceVerts);
-//        translateSurface(surfaceVerts, glm::vec3(0,-2.5,0));
-//        g.addSurface(1, surfaceVerts);
 
-        surfaceVerts = {};
-        countourer.polygonise(grid, 0, surfaceVerts, sampler);
+        MarchingCubes marcher;
+        marcher.polygonise(grid, 0, surfaceVerts, sampler);
         simpleVertexNormals(surfaceVerts);
-        translateSurface(surfaceVerts, glm::vec3(0,2.5,0));
-        g.addSurface(0, surfaceVerts);
+//        translateSurface(surfaceVerts, glm::vec3(0,-1.5,0));
+        g.addSurface(1, surfaceVerts);
+
+//        DualContour countourer;
+//        surfaceVerts = {};
+//        countourer.polygonise(grid, 0, surfaceVerts, sampler);
+//        simpleVertexNormals(surfaceVerts);
+////        translateSurface(surfaceVerts, glm::vec3(0,2.5,0));
+//        g.addSurface(0, surfaceVerts);
     }
 
     g.mustUpdate();

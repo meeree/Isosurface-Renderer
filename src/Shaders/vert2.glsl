@@ -28,6 +28,6 @@ void main(void)
     vs_out.color = idMod == 0 ? vec4(1.0, 0.0, 0.0, 1.0) : (idMod == 1 ? vec4(0.0, 1.0, 0.0, 1.0) : vec4(0.0, 0.0, 1.0, 1.0)); 
 
     gl_Position = pMat*vMat*mMat*vec4(scalar*position, 1.0);
-    vs_out.position = scalar*position; 
+    vs_out.position = position; 
     vs_out.normal = normal;
 }

@@ -1,3 +1,11 @@
+//Good papers:
+//Marching Cubes:
+//http://paulbourke.net/geometry/polygonise/
+//Dual Contouring:
+//http://www.frankpetterson.com/publications/dualcontour/dualcontour.pdf
+//https://people.eecs.berkeley.edu/~jrs/meshpapers/SchaeferWarren2.pdf
+//(Note, the second is an extension of the first) 
+
 #include "polygoniser.h"
 #include <armadillo>
 #include <cstdio>
@@ -135,20 +143,6 @@ void MarchingCubes::polygonise (Grid const&, float const&, std::vector<Vertex>&,
     exit(EXIT_SUCCESS);
 }
 
-void cramerSolve3 (glm::mat3x3 const& A, glm::vec3& x, glm::vec3 const& b)
-{
-    float dets[4]{
-        glm::determinant(A),
-        b[0]*(A[1][1]*A[2][2]-A[1][2]*A[2][1])-A[0][1]*(b[1]*A[2][2]-A[1][2]*b[2])+A[0][2]*(b[1]*A[2][1]-A[1][1]*b[2]),
-        A[0][0]*(b[1]*A[2][2]-A[1][2]*b[2])-b[0]*(A[1][0]*A[2][2]-A[1][2]*A[2][0])+A[0][2]*(A[1][0]*b[2]-b[1]*A[2][0]),
-        A[0][0]*(A[1][1]*b[2]-b[1]*A[2][1])-A[0][1]*(A[1][0]*b[2]-b[1]*A[2][0])+b[0]*(A[1][0]*A[2][1]-A[1][1]*A[2][0])
-    };
-    for (unsigned i = 0; i < 3; ++i)
-    {
-        x[i] = dets[1+i]/dets[0]; 
-    }
-}
-
 std::pair<size_t,uint8_t> calulateEdgeLookup (Grid const& grid, unsigned const& i, unsigned const& j, unsigned const& k, uint8_t const& edge)
 {
     switch (edge)
@@ -181,14 +175,42 @@ std::pair<size_t,uint8_t> calulateEdgeLookup (Grid const& grid, unsigned const& 
     return {};
 }
 
-float QEF (glm::vec3 const& x, glm::mat3x3 const& At_A, glm::vec3 const& At_b, float const& bt_b)
+//See https://en.wikipedia.org/wiki/Moore%E2%80%93Penrose_pseudoinverse#Singular_value_decomposition_.28SVD.29
+glm::mat3x3 pseudoInverse (float* sums)
 {
-    return glm::dot(x,At_A*x-2.0f*At_b+bt_b);
+
+    arma::mat33 armaAt_A{
+        sums[0], sums[3], sums[4],
+        sums[3], sums[1], sums[5],
+        sums[4], sums[5], sums[2]};
+    arma::cx_vec eigVals;
+    arma::cx_mat eigVecs;
+    arma::eig_gen(eigVals, eigVecs, armaAt_A);
+    //THIS DOESN'T SEEM TO WORK AS A GOOD TOLERANCE: FIX ME! 
+    double TOLERANCE{std::numeric_limits<double>::epsilon()*arma::max(eigVals).real()};
+
+    glm::mat3x3 U{
+        eigVecs.at(0,0).real(), eigVecs.at(0,1).real(), eigVecs.at(0,2).real(),
+        eigVecs.at(1,0).real(), eigVecs.at(1,1).real(), eigVecs.at(1,2).real(),
+        eigVecs.at(2,0).real(), eigVecs.at(2,1).real(), eigVecs.at(2,2).real()};
+    //pseudo inverse of singular value matrix
+//    glm::mat3x3 Dinv{
+//        eigVals.at(0).real() <= TOLERANCE ? 0 : 1.0/eigVals.at(0).real(), 0, 0,
+//        0, eigVals.at(1).real() <= TOLERANCE ? 0 : 1.0/eigVals.at(1).real(), 0,
+//        0, 0, eigVals.at(2).real() <= TOLERANCE ? 0 : 1.0/eigVals.at(2).real()};
+    arma::mat33 armaDinv{arma::pinv(arma::mat33({
+        eigVals.at(0).real(), 0.0f, 0.0f,
+        0.0f, eigVals.at(1).real(), 0.0f, 
+        0.0f, 0.0f, eigVals.at(2).real()}))};
+    glm::mat3x3 Dinv{
+        armaDinv.at(0,0), armaDinv.at(1,0), armaDinv.at(2,0),
+        armaDinv.at(0,1), armaDinv.at(1,1), armaDinv.at(2,1),
+        armaDinv.at(0,2), armaDinv.at(1,2), armaDinv.at(2,2)};
+    return U*Dinv*glm::transpose(U);
 }
 
 void DualContour::polygonise (Grid const& grid, float const& isolevel, std::vector<Vertex>& vertices, DensitySampler const& sampler)
 {
-//    std::map<std::tuple<unsigned, unsigned, unsigned, uint8_t>, std::vector<glm::vec3>> edgeMap;
     std::map<std::pair<size_t,uint8_t>, std::vector<glm::vec3>> edgeMap;
     for (unsigned k = 0; k < grid.mDim[2]-1; ++k)
     {
@@ -252,20 +274,26 @@ void DualContour::polygonise (Grid const& grid, float const& isolevel, std::vect
                     }
                 }
                     
-                glm::vec3 avg{0};
                 for (auto& hermPair: hermiteList)
                 {
                     //NOTE: We can refine the 0.01 here to make it relative to the size of the grid: this will be needed for octrees especially
                     hermPair.second = {
-                        sampler.sample(hermPair.first+glm::vec3(0.001f,0.0f,0.0f))-sampler.sample(hermPair.first-glm::vec3(0.001f,0.0f,0.0f)),
-                        sampler.sample(hermPair.first+glm::vec3(0.0f,0.001f,0.0f))-sampler.sample(hermPair.first-glm::vec3(0.0f,0.001f,0.0f)),
-                        sampler.sample(hermPair.first+glm::vec3(0.0f,0.0f,0.001f))-sampler.sample(hermPair.first-glm::vec3(0.0f,0.0f,0.001f))};
-//                    hermPair.second = glm::normalize(hermPair.second);
-                    avg += hermPair.first; 
+                        sampler.sample(hermPair.first+glm::vec3(0.0001f,0.0f,0.0f))-sampler.sample(hermPair.first-glm::vec3(0.0001f,0.0f,0.0f)),
+                        sampler.sample(hermPair.first+glm::vec3(0.0f,0.0001f,0.0f))-sampler.sample(hermPair.first-glm::vec3(0.0f,0.0001f,0.0f)),
+                        sampler.sample(hermPair.first+glm::vec3(0.0f,0.0f,0.0001f))-sampler.sample(hermPair.first-glm::vec3(0.0f,0.0f,0.0001f))};
+                    hermPair.second = glm::normalize(hermPair.second);
                 }                 
+                //Simply remove any intersections that are nondifferentiable, for now:
+                //this should be refined in the future 
+                hermiteList.erase(std::remove_if(hermiteList.begin(), hermiteList.end(), [](std::pair<glm::vec3, glm::vec3> const& hermPair)
+                        {return std::isnan(hermPair.second.x);}), hermiteList.end()); 
+
+                //Average positions in hermiteList to get a 'mass point'
+                glm::vec3 avg;
+                for (auto const& hermPair: hermiteList) {avg += hermPair.first;} 
                 avg /= hermiteList.size();
 
-                float sums[10];
+                float sums[9];
                 for (unsigned ind = 0; ind < hermiteList.size(); ++ind)
                 {
                     glm::vec3 const& n_i{hermiteList[ind].second};
@@ -279,35 +307,24 @@ void DualContour::polygonise (Grid const& grid, float const& isolevel, std::vect
                     sums[6] += d*n_i.x;
                     sums[7] += d*n_i.y;
                     sums[8] += d*n_i.z;
-                    sums[9] += d*d;
+//                    sums[9] += d*d;
                 }
-                arma::mat33 At_A{
+                arma::mat33 armaAt_A{
                     sums[0], sums[3], sums[4],
                     sums[3], sums[1], sums[5],
                     sums[4], sums[5], sums[2]};
-                arma::mat33 inv{pinv(At_A)};
-                glm::mat3x3 glmInv{
-                    inv.at(0,0), inv.at(1,0), inv.at(2,0),
-                    inv.at(0,1), inv.at(1,1), inv.at(2,1),
-                    inv.at(0,2), inv.at(1,2), inv.at(2,2)};
+                arma::mat33 armaInv{pinv(armaAt_A)};
+                glm::mat3x3 inv{
+                    armaInv.at(0,0), armaInv.at(1,0), armaInv.at(2,0),
+                    armaInv.at(0,1), armaInv.at(1,1), armaInv.at(2,1),
+                    armaInv.at(0,2), armaInv.at(1,2), armaInv.at(2,2)};
+//                glm::mat3x3 inv{pseudoInverse(sums)};
+
                 glm::vec3 At_b{sums[6], sums[7], sums[8]};
-                float bt_b{sums[9]};
-                glm::vec3 x{glmInv*At_b};
+////                float bt_b{sums[9]};
+                glm::vec3 x{inv*At_b};
                 x += avg;
 
-//                //NOTE: This solution should be refined in the case when the solution falls outside of the current box
-//                glm::vec3 x;
-//                cramerSolve3(At_A, x, At_b);
-                
-                if (i == 49 && j == 49 && k == 49) 
-                {
-                    printf("x:%s",glm::to_string(x).c_str()); 
-                    printf("start position: %s, size: %s:\nposition | normal\n", glm::to_string(positions[3]).c_str(), glm::to_string(positions[5]-positions[3]).c_str());
-                    for (auto const& hermPair: hermiteList)
-                    {
-                        printf("%s,%s\n", glm::to_string(hermPair.first).c_str(), glm::to_string(hermPair.second).c_str());
-                    }
-                }
                 for (auto const& edge: unequalEdges)
                 {
                     std::pair<size_t, uint8_t> edgeLookup{calulateEdgeLookup(grid,i,j,k,edge)};
@@ -347,6 +364,13 @@ void DualContour::polygonise (Grid const& grid, float const& isolevel, std::vect
                 break;
         }
     }
+//    for (auto& vert: vertices)
+//    {
+//        vert.mNormal = {sampler.sample(vert.mPosition+glm::vec3(0.0001f,0.0f,0.0f))-sampler.sample(vert.mPosition-glm::vec3(0.0001f,0.0f,0.0f)),
+//                       sampler.sample(vert.mPosition+glm::vec3(0.0f,0.0001f,0.0f))-sampler.sample(vert.mPosition-glm::vec3(0.0f,0.0001f,0.0f)),
+//                       sampler.sample(vert.mPosition+glm::vec3(0.0f,0.0f,0.0001f))-sampler.sample(vert.mPosition-glm::vec3(0.0f,0.0f,0.0001f))};
+//        vert.mNormal = -glm::normalize(vert.mNormal);
+//    }
 }
 
 uint16_t MarchingCubes::msEdgeTable[256]{

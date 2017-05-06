@@ -38,17 +38,21 @@ private:
     GLuint mColorScheme;
     static GLuint msColorSchemeCount;
 
+    GLfloat mYMin, mYMax;
+    GLfloat mMin, mMax;
+
     bool fMustUpdate;
     bool fDrawAxes;
+    bool fMustSetMinMax;
 
     void setShaders (char const*, char const*);
-
 public:
     glm::mat4 mModMat, mViewMat;
 
     Graphics (GLfloat const&, GLfloat const&, char const*, char const*, const char* title="Untitled Window");
 
     void setCam (glm::vec3 const&, glm::vec3 const&);
+    void setMinMax ();
     void moveCam (glm::vec3 const&);
     void addSurface (float const&, std::vector<Vertex> const&, std::vector<unsigned> const&);
     void addSurface (float const&, std::vector<Vertex> const&);
@@ -57,6 +61,7 @@ public:
     inline GLFWwindow* const& getWindow () const {return mWindow;};
 
     void mustUpdate ();
+    void mustSetMinMax ();
     void toggleAxes (GLfloat const& sz=1.0f);
 
     void update ();
